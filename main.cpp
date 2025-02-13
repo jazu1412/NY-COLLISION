@@ -1,6 +1,7 @@
 #include <iostream>
 #include "MyDataSet.h"
 #include "QuoteAwareCSVParser.h"
+#include <chrono>
 
 int main() {
     // 1) Create your dataset
@@ -41,8 +42,16 @@ int main() {
     std::cout << "searchByDateRange(2021-01-01, 2021-12-31) -> " << dateRange.size() << " records.\n";
 
     // 5) searchByVehicleType
-    auto sedans = dataset.searchByVehicleType("Sedan");
-    std::cout << "searchByVehicleType(\"Sedan\") -> " << sedans.size() << " records.\n";
+
+    {
+       auto start = std::chrono::high_resolution_clock::now();
+       int sedans = dataset.searchByVehicleType("Sedan");
+       std::cout << "searchByVehicleType(\"Sedan\") -> " << sedans << " records.\n";
+       auto end = std::chrono::high_resolution_clock::now();
+       double dur = std::chrono::duration<double>(end - start).count();
+      std::cout << "searchByVehicleType time: " << dur << " seconds\n";
+    }
+   
 
     // 6) searchByInjuryRange
     auto inj2to5 = dataset.searchByInjuryRange(2, 5);

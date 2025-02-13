@@ -2,6 +2,8 @@
 #include <fstream>
 #include <iostream>
 #include <cstdlib> // std::stoi, std::stof
+#include <chrono>
+#include <omp.h>
 
 // safe integer parse
 static int parseInt(const std::string &s) {
@@ -235,22 +237,62 @@ std::vector<DataRecord> MyDataSet::searchByDateRange(
 /******************************************************
  * 5) searchByVehicleType
  ******************************************************/
-std::vector<DataRecord> MyDataSet::searchByVehicleType(const std::string &vehicleType) const {
-    std::vector<DataRecord> results;
-    results.reserve(records_.size());
+// int MyDataSet::searchByVehicleType(const std::string &vehicleType) const {
+//      std::vector<DataRecord> results;
+//     results.reserve(records_.size());
+//    int totalCount = 0;
 
-    for (const auto &r : records_) {
-        // If any vehicle_type_code_* matches vehicleType
+//     for (const auto &r : records_) {
+//         // If any vehicle_type_code_* matches vehicleType
+//         if (r.vehicle_type_code_1 == vehicleType ||
+//             r.vehicle_type_code_2 == vehicleType ||
+//             r.vehicle_type_code_3 == vehicleType ||
+//             r.vehicle_type_code_4 == vehicleType ||
+//             r.vehicle_type_code_5 == vehicleType)
+//         {
+//             totalCount++;
+//         }
+//     }
+//     return totalCount;
+// }
+
+  int MyDataSet::searchByVehicleType(const std::string &vehicleType) const {
+    // (A) Create a vector of partial results for each thread
+    //     Each thread writes to partials[tid] to avoid data races.
+    omp_set_num_threads(11);
+    int nThreads = omp_get_max_threads();  // or #pragma omp parallel to get it
+ std::vector<DataRecord> results;
+  results.reserve(records_.size());
+     std::cout << "In threads flow -- searchByVehicleType(\"Sedan\") -> no of threads is " << nThreads<< "  threads\n";
+
+    // (B) Parallel region
+
+    auto start = std::chrono::high_resolution_clock::now();
+    
+  int totalCount = 0;
+
+    #pragma omp parallel for reduction(+:totalCount)
+    for (size_t i = 0; i < records_.size(); i++) {
+        const auto &r = records_[i];
         if (r.vehicle_type_code_1 == vehicleType ||
             r.vehicle_type_code_2 == vehicleType ||
             r.vehicle_type_code_3 == vehicleType ||
             r.vehicle_type_code_4 == vehicleType ||
             r.vehicle_type_code_5 == vehicleType)
         {
-            results.push_back(r);
+            totalCount++;  // each thread increments local counter,
+                           // then OpenMP reduction adds them up
         }
     }
-    return results;
+    
+
+//     //  auto end = std::chrono::high_resolution_clock::now();
+//     //    double dur = std::chrono::duration<double>(end - start).count();
+//     //   std::cout << "Thread area over--> searchByVehicleType time: " << dur << " seconds\n";
+
+
+return totalCount;
+
 }
 
 /******************************************************

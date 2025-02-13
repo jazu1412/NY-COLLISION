@@ -67,7 +67,7 @@ public:
      * @param vehicleType E.g. "Sedan", "Taxi", "Bike", etc.
      * @return collisions that mention this vehicle type in any vehicle code field.
      */
-    std::vector<DataRecord> searchByVehicleType(const std::string &vehicleType) const;
+    int searchByVehicleType(const std::string &vehicleType) const;
 
     /**
      * @brief 6) Searches collisions with total injuries in [minInjury, maxInjury].
