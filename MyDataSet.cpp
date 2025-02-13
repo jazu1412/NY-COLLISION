@@ -177,3 +177,194 @@ std::vector<DataRecord> results;
     }
 
 
+
+/******************************************************
+ * 2) searchByBorough
+ ******************************************************/
+std::vector<DataRecord> MyDataSet::searchByBorough(const std::string &boroughName) const {
+    std::vector<DataRecord> results;
+    results.reserve(records_.size());
+
+    for (const auto &r : records_) {
+        // case-sensitive match
+        if (r.borough == boroughName) {
+            results.push_back(r);
+        }
+    }
+    return results;
+}
+
+/******************************************************
+ * 3) searchByZIP
+ ******************************************************/
+std::vector<DataRecord> MyDataSet::searchByZIP(const std::string &zip) const {
+    std::vector<DataRecord> results;
+    results.reserve(records_.size());
+
+    for (const auto &r : records_) {
+        if (r.zip_code == zip) {
+            results.push_back(r);
+        }
+    }
+    return results;
+}
+
+/******************************************************
+ * 4) searchByDateRange
+ ******************************************************
+ * We assume date strings are comparable lexically,
+ * e.g. "2021-09-11" < "2022-01-01".
+ * If your date is "MM/DD/YYYY", or you want real date logic,
+ * parse them into a date struct or use chrono.
+ */
+std::vector<DataRecord> MyDataSet::searchByDateRange(
+    const std::string &startDate,
+    const std::string &endDate
+) const {
+    std::vector<DataRecord> results;
+    results.reserve(records_.size());
+
+    for (const auto &r : records_) {
+        if (r.crash_date >= startDate && r.crash_date <= endDate) {
+            results.push_back(r);
+        }
+    }
+    return results;
+}
+
+/******************************************************
+ * 5) searchByVehicleType
+ ******************************************************/
+std::vector<DataRecord> MyDataSet::searchByVehicleType(const std::string &vehicleType) const {
+    std::vector<DataRecord> results;
+    results.reserve(records_.size());
+
+    for (const auto &r : records_) {
+        // If any vehicle_type_code_* matches vehicleType
+        if (r.vehicle_type_code_1 == vehicleType ||
+            r.vehicle_type_code_2 == vehicleType ||
+            r.vehicle_type_code_3 == vehicleType ||
+            r.vehicle_type_code_4 == vehicleType ||
+            r.vehicle_type_code_5 == vehicleType)
+        {
+            results.push_back(r);
+        }
+    }
+    return results;
+}
+
+/******************************************************
+ * 6) searchByInjuryRange
+ ******************************************************/
+std::vector<DataRecord> MyDataSet::searchByInjuryRange(int minInjury, int maxInjury) const {
+    std::vector<DataRecord> results;
+    results.reserve(records_.size());
+
+    for (const auto &r : records_) {
+        int totalInj = r.number_of_persons_injured
+                     + r.number_of_pedestrians_injured
+                     + r.number_of_cyclist_injured
+                     + r.number_of_motorist_injured;
+
+        if (totalInj >= minInjury && totalInj <= maxInjury) {
+            results.push_back(r);
+        }
+    }
+    return results;
+}
+
+
+
+/******************************************************
+ * 7) searchByFatalitiesRange
+ ******************************************************/
+std::vector<DataRecord> MyDataSet::searchByFatalitiesRange(int minFatal, int maxFatal) const {
+    std::vector<DataRecord> results;
+    results.reserve(records_.size());
+
+    for (const auto &r : records_) {
+        int totalFat = r.number_of_persons_killed;
+                   
+
+        if (totalFat >= minFatal && totalFat <= maxFatal) {
+            results.push_back(r);
+        }
+    }
+    return results;
+}
+
+/******************************************************
+ * 7) searchByFatalitiesRange
+ ******************************************************/
+std::vector<DataRecord> MyDataSet::searchByPedestrianFatalitiesRange(int minFatal, int maxFatal) const {
+    std::vector<DataRecord> results;
+    results.reserve(records_.size());
+
+    for (const auto &r : records_) {
+        int totalFat = r.number_of_pedestrians_killed;
+                   
+
+        if (totalFat >= minFatal && totalFat <= maxFatal) {
+            results.push_back(r);
+        }
+    }
+    return results;
+}
+
+
+/******************************************************
+ * 7) searchByFatalitiesRange
+ ******************************************************/
+std::vector<DataRecord> MyDataSet::searchByCyclistFatalitiesRange(int minFatal, int maxFatal) const {
+    std::vector<DataRecord> results;
+    results.reserve(records_.size());
+
+    for (const auto &r : records_) {
+        int totalFat = r.number_of_cyclist_killed;
+                   
+
+        if (totalFat >= minFatal && totalFat <= maxFatal) {
+            results.push_back(r);
+        }
+    }
+    return results;
+}
+
+
+/******************************************************
+ * 7) searchByFatalitiesRange
+ ******************************************************/
+std::vector<DataRecord> MyDataSet::searchByMotoristFatalitiesRange(int minFatal, int maxFatal) const {
+    std::vector<DataRecord> results;
+    results.reserve(records_.size());
+
+    for (const auto &r : records_) {
+        int totalFat = r.number_of_motorist_killed;
+                   
+
+        if (totalFat >= minFatal && totalFat <= maxFatal) {
+            results.push_back(r);
+        }
+    }
+    return results;
+}
+
+    /******************************************************
+ * 8) searchByUniqueKey
+ ******************************************************/
+std::vector<DataRecord> MyDataSet::searchByUniqueKey(int key) const {
+    std::vector<DataRecord> results;
+    results.reserve(1); // typically 1 or 0 matches
+
+    for (const auto &r : records_) {
+        if (r.unique_key == key) {
+            results.push_back(r);
+              std::cout << "collision id based search data  is : " <<  r.crash_date << " and lat and longitude is "<<r.latitude <<"  "<< r.longitude <<" and no of person injured is " << r.number_of_persons_injured <<"\n";
+            // break if you assume it's unique, or keep searching if collisions might share a key
+            // break;
+        }
+    }
+    return results;
+}
+
+
