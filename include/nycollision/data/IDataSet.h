@@ -1,5 +1,5 @@
 #pragma once
-#include "IRecord.h"
+#include "../core/IRecord.h"
 #include <memory>
 #include <vector>
 

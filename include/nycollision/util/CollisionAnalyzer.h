@@ -1,6 +1,6 @@
 #pragma once
-#include "DataSet.h"
-#include "CSVParser.h"
+#include "../data/DataSet.h"
+#include "../parser/CSVParser.h"
 #include <memory>
 #include <string>
 

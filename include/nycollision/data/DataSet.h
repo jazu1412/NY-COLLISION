@@ -1,6 +1,7 @@
 #pragma once
 #include "IDataSet.h"
-#include "IParser.h"
+#include "../parser/IParser.h"
+#include "../core/Record.h"
 #include <unordered_map>
 #include <map>
 #include <memory>
