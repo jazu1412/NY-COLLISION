@@ -12,16 +12,33 @@ set(LIB_SOURCES
     src/CSVParser.cpp
 )
 
-# Library headers
+# Library headers by category
+set(CORE_HEADERS
+    include/nycollision/core/Types.h
+    include/nycollision/core/IRecord.h
+    include/nycollision/core/Record.h
+)
+
+set(DATA_HEADERS
+    include/nycollision/data/IDataSet.h
+    include/nycollision/data/DataSet.h
+)
+
+set(PARSER_HEADERS
+    include/nycollision/parser/IParser.h
+    include/nycollision/parser/CSVParser.h
+)
+
+set(UTIL_HEADERS
+    include/nycollision/util/CollisionAnalyzer.h
+)
+
+# Combine all headers
 set(LIB_HEADERS
-    include/nycollision/Types.h
-    include/nycollision/IRecord.h
-    include/nycollision/Record.h
-    include/nycollision/IDataSet.h
-    include/nycollision/DataSet.h
-    include/nycollision/IParser.h
-    include/nycollision/CSVParser.h
-    include/nycollision/CollisionAnalyzer.h
+    ${CORE_HEADERS}
+    ${DATA_HEADERS}
+    ${PARSER_HEADERS}
+    ${UTIL_HEADERS}
 )
 
 # Create library target

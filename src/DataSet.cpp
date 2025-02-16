@@ -1,4 +1,4 @@
-#include "../include/nycollision/DataSet.h"
+#include "../include/nycollision/data/DataSet.h"
 #include <algorithm>
 
 namespace nycollision {

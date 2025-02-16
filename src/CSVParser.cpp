@@ -1,4 +1,5 @@
-#include "../include/nycollision/CSVParser.h"
+#include "../include/nycollision/parser/CSVParser.h"
+#include "../include/nycollision/core/Record.h"
 #include <sstream>
 #include <stdexcept>
 
