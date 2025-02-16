@@ -1,91 +1,79 @@
+#include <nycollision/CollisionAnalyzer.h>
 #include <iostream>
-#include "MyDataSet.h"
-#include "QuoteAwareCSVParser.h"
-#include <chrono>
+#include <iomanip>
 
-int main() {
-    // 1) Create your dataset
-    MyDataSet dataset;
-
-    // 2) Create a parser (QuoteAwareCSVParser)
-    QuoteAwareCSVParser parser;
-
-    // 3)  a CSV file (place "sample_data.csv" in same folder)
-    dataset.loadFromCSV("Motor_Vehicle_Collisions_-_Crashes_20250212.csv", parser);
-
-    // 4) Example: bounding-box query
-    float minLat = 40.0f, maxLat = 41.0f;
-    float minLon = -74.5f, maxLon = -73.0f;
-
-    auto matches = dataset.rangeQuery(minLat, maxLat, minLon, maxLon);
-    std::cout << "rangeQuery found " << matches.size()
-              << " records in bounding box.\n";
-
-    // 5) Print final size
-    std::cout << "Total records loaded: " << dataset.size() << "\n";
-
-     auto serious = dataset.findNoOfRecordsWithMinInjured(7);
-   std::cout << "Found " << serious.size() << " collisions with >=7 injuries.\n";
-
-
-
-    // 2) searchByBorough
-    auto bk = dataset.searchByBorough("BROOKLYN");
-    std::cout << "searchByBorough(\"BROOKLYN\") -> " << bk.size() << " records.\n";
-
-    // 3) searchByZIP
-    auto zipMatches = dataset.searchByZIP("11208");
-    std::cout << "searchByZIP(\"11208\") -> " << zipMatches.size() << " records.\n";
-
-    // 4) searchByDateRange
-    auto dateRange = dataset.searchByDateRange("2021-01-01", "2021-12-31");
-    std::cout << "searchByDateRange(2021-01-01, 2021-12-31) -> " << dateRange.size() << " records.\n";
-
-    // 5) searchByVehicleType
-
-    {
-       auto start = std::chrono::high_resolution_clock::now();
-       int sedans = dataset.searchByVehicleType("Sedan");
-       std::cout << "searchByVehicleType(\"Sedan\") -> " << sedans << " records.\n";
-       auto end = std::chrono::high_resolution_clock::now();
-       double dur = std::chrono::duration<double>(end - start).count();
-      std::cout << "searchByVehicleType time: " << dur << " seconds\n";
+// Helper function to print collision records
+void printCollisions(const std::vector<std::shared_ptr<const nycollision::IRecord>>& records) {
+    std::cout << "Found " << records.size() << " collisions:\n";
+    for (const auto& record : records) {
+        const auto& stats = record->getCasualtyStats();
+        std::cout << "\nDate: " << record->getDateTime().date
+                  << " " << record->getDateTime().time << "\n"
+                  << "Location: " << record->getBorough()
+                  << " (ZIP: " << record->getZipCode() << ")\n"
+                  << "Coordinates: " << std::fixed << std::setprecision(6)
+                  << record->getLocation().latitude << ", "
+                  << record->getLocation().longitude << "\n"
+                  << "Casualties: "
+                  << stats.getTotalInjuries() << " injured, "
+                  << stats.getTotalFatalities() << " killed\n"
+                  << "Street: " << record->getOnStreet()
+                  << " at " << record->getCrossStreet() << "\n";
     }
-   
+    std::cout << std::endl;
+}
 
-    // 6) searchByInjuryRange
-    auto inj2to5 = dataset.searchByInjuryRange(2, 5);
-    std::cout << "searchByInjuryRange(2,5) -> " << inj2to5.size() << " records.\n";
+int main(int argc, char* argv[]) {
+    if (argc != 2) {
+        std::cerr << "Usage: " << argv[0] << " <collision_data.csv>\n";
+        return 1;
+    }
 
+    try {
+        // Create analyzer and load data
+        nycollision::CollisionAnalyzer analyzer;
+        analyzer.loadData(argv[1]);
+        std::cout << "Loaded " << analyzer.getTotalRecords() << " collision records\n\n";
 
+        // Example 1: Find collisions in Brooklyn
+        std::cout << "=== Collisions in Brooklyn ===\n";
+        auto brooklynCollisions = analyzer.findCollisionsInBorough("BROOKLYN");
+        printCollisions(std::vector<std::shared_ptr<const nycollision::IRecord>>(
+            brooklynCollisions.begin(),
+            brooklynCollisions.begin() + std::min(size_t(3), brooklynCollisions.size())
+        ));
 
-     auto killed = dataset.findNoOfRecordsWithMotoristKilled(1);
-   std::cout << "Found " << killed.size() << " collisions with killed motorists greater than one\n";
+        // Example 2: Find collisions with high casualty count
+        std::cout << "\n=== Severe Collisions (5+ injuries) ===\n";
+        auto severeCollisions = analyzer.findCollisionsByInjuryCount(5, 999);
+        printCollisions(std::vector<std::shared_ptr<const nycollision::IRecord>>(
+            severeCollisions.begin(),
+            severeCollisions.begin() + std::min(size_t(3), severeCollisions.size())
+        ));
 
-// 7) searchByFatalitiesRange
-    auto fatal1to3 = dataset.searchByFatalitiesRange(1, 3);
-    std::cout << "searchByFatalitiesRange(1,3) -> " << fatal1to3.size() << " records.\n";
+        // Example 3: Find collisions in a specific area
+        std::cout << "\n=== Collisions in Lower Manhattan ===\n";
+        auto areaCollisions = analyzer.findCollisionsInArea(
+            40.7000, 40.7200,  // latitude range
+            -74.0100, -73.9900 // longitude range
+        );
+        printCollisions(std::vector<std::shared_ptr<const nycollision::IRecord>>(
+            areaCollisions.begin(),
+            areaCollisions.begin() + std::min(size_t(3), areaCollisions.size())
+        ));
 
+        // Example 4: Find collisions by vehicle type
+        std::cout << "\n=== Taxi-involved Collisions ===\n";
+        auto taxiCollisions = analyzer.findCollisionsByVehicleType("TAXI");
+        printCollisions(std::vector<std::shared_ptr<const nycollision::IRecord>>(
+            taxiCollisions.begin(),
+            taxiCollisions.begin() + std::min(size_t(3), taxiCollisions.size())
+        ));
 
-    // 7) searchByFatalitiesRange
-    auto fatal1to3a = dataset.searchByPedestrianFatalitiesRange(1, 3);
-    std::cout << "searchByPedestrianFatalitiesRange(1,3) -> " << fatal1to3a.size() << " records.\n";
-
-
-// 7) searchByFatalitiesRange
-    auto fatal1to3b = dataset.searchByCyclistFatalitiesRange(1, 3);
-    std::cout << "searchByMotoristFatalitiesRange(1,3) -> " << fatal1to3b.size() << " records.\n";
-
-
-
-// 7) searchByFatalitiesRange
-    auto fatal1to3c = dataset.searchByMotoristFatalitiesRange(1, 3);
-    std::cout << "searchByMotoristFatalitiesRange(1,3) -> " << fatal1to3c.size() << " records.\n";
-
-
-    // 8) searchByUniqueKey
-    auto keyMatches = dataset.searchByUniqueKey(4456314);
-    std::cout << "searchByUniqueKey(4456314) -> " << keyMatches.size() << " records.\n";
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+        return 1;
+    }
 
     return 0;
 }
