@@ -100,7 +100,16 @@ int main(int argc, char* argv[]) {
     try {
         // Create analyzer and load data
         nycollision::CollisionAnalyzer analyzer;
+        auto startTime = std::chrono::high_resolution_clock::now();
+       
         analyzer.loadData(argv[1]);
+
+        auto endTime = std::chrono::high_resolution_clock::now();
+
+        std::chrono::duration<double> elapsedSeconds = endTime - startTime;
+        std::cout << "loadData took " << elapsedSeconds.count() << " seconds.\n";
+
+
         std::cout << "Loaded " << analyzer.getTotalRecords() << " collision records\n\n";
 
         // Example 1: Find collisions in Brooklyn
@@ -113,7 +122,7 @@ int main(int argc, char* argv[]) {
         std::cout << "\n=== Severe Collisions (5+ injuries) ===\n";
         auto severeCollisions = analyzer.findCollisionsByInjuryCount(5, 999);
         printCollisions(severeCollisions);
-        analyzeVehicleTypes(severeCollisions);
+       // analyzeVehicleTypes(severeCollisions);
 
         // Example 3: Find collisions in Lower Manhattan
         std::cout << "\n=== Collisions in Lower Manhattan ===\n";
@@ -133,7 +142,7 @@ int main(int argc, char* argv[]) {
         std::cout << "\n=== Collisions in January 2024 ===\n";
         auto januaryCollisions = analyzer.findCollisionsInDateRange("2024-01-01", "2024-01-31");
         printCollisions(januaryCollisions);
-        analyzeVehicleTypes(januaryCollisions);
+       // analyzeVehicleTypes(januaryCollisions);
 
         // Example 6: Find collisions with cyclist fatalities
         std::cout << "\n=== Collisions with Cyclist Fatalities ===\n";

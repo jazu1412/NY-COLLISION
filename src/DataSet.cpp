@@ -93,16 +93,19 @@ DataSet::Records DataSet::queryByGeoBounds(
             }
         }
     }
+    std::cout << "calling from queryByGeoBounds" << " .\n";
     return convertToInterfaceRecords(result);
 }
 
 DataSet::Records DataSet::queryByBorough(const std::string& borough) const {
     auto it = boroughIndex_.find(borough);
+     std::cout << "calling from queryByBorough" << " .\n";
     return it != boroughIndex_.end() ? convertToInterfaceRecords(it->second) : Records{};
 }
 
 DataSet::Records DataSet::queryByZipCode(const std::string& zipCode) const {
     auto it = zipIndex_.find(zipCode);
+      std::cout << "calling from queryByZipCode" << " .\n";
     return it != zipIndex_.end() ? convertToInterfaceRecords(it->second) : Records{};
 }
 
@@ -114,11 +117,13 @@ DataSet::Records DataSet::queryByDateRange(const Date& start, const Date& end) c
     for (auto it = startIt; it != endIt; ++it) {
         result.insert(result.end(), it->second.begin(), it->second.end());
     }
+    std::cout << "calling from queryByDateRange" << " .\n";
     return convertToInterfaceRecords(result);
 }
 
 DataSet::Records DataSet::queryByVehicleType(const std::string& vehicleType) const {
     auto it = vehicleTypeIndex_.find(vehicleType);
+    std::cout << "calling from queryByVehicleType" << " .\n";
     return it != vehicleTypeIndex_.end() ? convertToInterfaceRecords(it->second) : Records{};
 }
 
@@ -130,6 +135,7 @@ DataSet::Records DataSet::queryByInjuryRange(int minInjuries, int maxInjuries) c
     for (auto it = startIt; it != endIt; ++it) {
         result.insert(result.end(), it->second.begin(), it->second.end());
     }
+    std::cout << "calling from queryByInjuryRange" << " .\n";
     return convertToInterfaceRecords(result);
 }
 
@@ -141,6 +147,7 @@ DataSet::Records DataSet::queryByFatalityRange(int minFatalities, int maxFatalit
     for (auto it = startIt; it != endIt; ++it) {
         result.insert(result.end(), it->second.begin(), it->second.end());
     }
+     std::cout << "calling from queryByFatalityRange" << " .\n";
     return convertToInterfaceRecords(result);
 }
 
@@ -157,6 +164,7 @@ DataSet::Records DataSet::queryByPedestrianFatalities(int minFatalities, int max
     for (auto it = startIt; it != endIt; ++it) {
         result.insert(result.end(), it->second.begin(), it->second.end());
     }
+     std::cout << "calling from queryByPedestrianFatalities" << " .\n";
     return convertToInterfaceRecords(result);
 }
 
@@ -168,6 +176,7 @@ DataSet::Records DataSet::queryByCyclistFatalities(int minFatalities, int maxFat
     for (auto it = startIt; it != endIt; ++it) {
         result.insert(result.end(), it->second.begin(), it->second.end());
     }
+     std::cout << "calling from queryByCyclistFatalities" << " .\n";
     return convertToInterfaceRecords(result);
 }
 
@@ -179,6 +188,7 @@ DataSet::Records DataSet::queryByMotoristFatalities(int minFatalities, int maxFa
     for (auto it = startIt; it != endIt; ++it) {
         result.insert(result.end(), it->second.begin(), it->second.end());
     }
+     std::cout << "calling from queryByMotoristFatalities" << " .\n";
     return convertToInterfaceRecords(result);
 }
 
