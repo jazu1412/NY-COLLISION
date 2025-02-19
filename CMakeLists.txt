@@ -6,10 +6,29 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Find OpenMP (optional)
+find_package(OpenMP)
+
+# Enable optimizations and vectorization
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -mcpu=native")
+    if(OpenMP_CXX_FOUND)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+        add_definitions(-D_OPENMP)
+    endif()
+elseif(MSVC)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /O2 /arch:AVX2")
+    if(OpenMP_CXX_FOUND)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+        add_definitions(-D_OPENMP)
+    endif()
+endif()
+
 # Library source files
 set(LIB_SOURCES
     src/DataSet.cpp
     src/CSVParser.cpp
+    src/VectorizedDataSet.cpp
 )
 
 # Library headers by category
@@ -22,6 +41,7 @@ set(CORE_HEADERS
 set(DATA_HEADERS
     include/nycollision/data/IDataSet.h
     include/nycollision/data/DataSet.h
+    include/nycollision/data/VectorizedDataSet.h
 )
 
 set(PARSER_HEADERS
@@ -49,9 +69,17 @@ target_include_directories(nycollision
         $<INSTALL_INTERFACE:include>
 )
 
+# Link OpenMP if found
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(nycollision PUBLIC OpenMP::OpenMP_CXX)
+endif()
+
 # Example executable
 add_executable(collision_example main.cpp)
 target_link_libraries(collision_example PRIVATE nycollision)
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(collision_example PRIVATE OpenMP::OpenMP_CXX)
+endif()
 
 # Installation rules
 include(GNUInstallDirs)

@@ -1,6 +1,9 @@
-#include <nycollision/util/CollisionAnalyzer.h>
+#include <nycollision/data/DataSet.h>
+#include <nycollision/data/VectorizedDataSet.h>
+#include <nycollision/parser/CSVParser.h>
 #include <iostream>
 #include <iomanip>
+#include <chrono>
 #include <map>
 
 // Helper function to print collision records
@@ -37,58 +40,65 @@ void printCollisions(const std::vector<std::shared_ptr<const nycollision::IRecor
             }
             std::cout << "\n";
         }
-        
-        if (!vehicleInfo.contributing_factors.empty()) {
-            std::cout << "Contributing factors:";
-            for (const auto& factor : vehicleInfo.contributing_factors) {
-                if (!factor.empty()) std::cout << " " << factor;
-            }
-            std::cout << "\n";
-        }
     }
     std::cout << std::endl;
 }
 
-// Helper function to analyze casualty statistics
-void analyzeCasualties(const std::vector<std::shared_ptr<const nycollision::IRecord>>& records) {
-    int totalInjuries = 0, totalFatalities = 0;
-    int pedInjuries = 0, pedFatalities = 0;
-    int cycInjuries = 0, cycFatalities = 0;
-    int motInjuries = 0, motFatalities = 0;
-    
-    for (const auto& record : records) {
-        const auto& stats = record->getCasualtyStats();
-        totalInjuries += stats.getTotalInjuries();
-        totalFatalities += stats.getTotalFatalities();
-        pedInjuries += stats.pedestrians_injured;
-        pedFatalities += stats.pedestrians_killed;
-        cycInjuries += stats.cyclists_injured;
-        cycFatalities += stats.cyclists_killed;
-        motInjuries += stats.motorists_injured;
-        motFatalities += stats.motorists_killed;
-    }
-    
-    std::cout << "Casualty Analysis:\n"
-              << "Total: " << totalInjuries << " injured, " << totalFatalities << " killed\n"
-              << "Pedestrians: " << pedInjuries << " injured, " << pedFatalities << " killed\n"
-              << "Cyclists: " << cycInjuries << " injured, " << cycFatalities << " killed\n"
-              << "Motorists: " << motInjuries << " injured, " << motFatalities << " killed\n\n";
+// Helper function to measure execution time
+template<typename Func>
+double measureTime(Func&& func) {
+    auto start = std::chrono::high_resolution_clock::now();
+    func();
+    auto end = std::chrono::high_resolution_clock::now();
+    return std::chrono::duration<double, std::milli>(end - start).count();
 }
 
-// Helper function to analyze vehicle types
-void analyzeVehicleTypes(const std::vector<std::shared_ptr<const nycollision::IRecord>>& records) {
-    std::map<std::string, int> vehicleCount;
-    for (const auto& record : records) {
-        for (const auto& type : record->getVehicleInfo().vehicle_types) {
-            if (!type.empty()) vehicleCount[type]++;
-        }
-    }
+// Helper function to run performance tests
+void runPerformanceTests(const nycollision::IDataSet& dataset) {
+    std::cout << "Running performance tests...\n";
     
-    std::cout << "Vehicle Types Involved:\n";
-    for (const auto& [type, count] : vehicleCount) {
-        std::cout << std::setw(20) << std::left << type << ": " << count << "\n";
-    }
-    std::cout << std::endl;
+    // Test 1: Borough queries
+    double boroughTime = measureTime([&]() {
+        auto records = dataset.queryByBorough("BROOKLYN");
+        std::cout << "Borough query found " << records.size() << " records\n";
+    });
+    
+    // Test 2: Date range queries
+    double dateTime = measureTime([&]() {
+        nycollision::Date start{"2024-01-01", "00:00"};
+        nycollision::Date end{"2024-01-31", "23:59"};
+        auto records = dataset.queryByDateRange(start, end);
+        std::cout << "Date range query found " << records.size() << " records\n";
+    });
+    
+    // Test 3: Geographic bounds queries
+    double geoTime = measureTime([&]() {
+        auto records = dataset.queryByGeoBounds(
+            40.7000, 40.7200,  // latitude range
+            -74.0100, -73.9900 // longitude range
+        );
+        std::cout << "Geographic bounds query found " << records.size() << " records\n";
+    });
+    
+    // Test 4: Injury range queries
+    double injuryTime = measureTime([&]() {
+        auto records = dataset.queryByInjuryRange(3, 10);
+        std::cout << "Injury range query found " << records.size() << " records\n";
+    });
+    
+    // Test 5: Vehicle type queries
+    double vehicleTime = measureTime([&]() {
+        auto records = dataset.queryByVehicleType("TAXI");
+        std::cout << "Vehicle type query found " << records.size() << " records\n";
+    });
+    
+    std::cout << "\nPerformance Results:\n"
+              << "Borough query: " << std::fixed << std::setprecision(2) << boroughTime << "ms\n"
+              << "Date range query: " << dateTime << "ms\n"
+              << "Geographic bounds query: " << geoTime << "ms\n"
+              << "Injury range query: " << injuryTime << "ms\n"
+              << "Vehicle type query: " << vehicleTime << "ms\n"
+              << "Total time: " << (boroughTime + dateTime + geoTime + injuryTime + vehicleTime) << "ms\n\n";
 }
 
 int main(int argc, char* argv[]) {
@@ -98,57 +108,34 @@ int main(int argc, char* argv[]) {
     }
 
     try {
-        // Create analyzer and load data
-        nycollision::CollisionAnalyzer analyzer;
-        auto startTime = std::chrono::high_resolution_clock::now();
-       
-        analyzer.loadData(argv[1]);
-
-        auto endTime = std::chrono::high_resolution_clock::now();
-
-        std::chrono::duration<double> elapsedSeconds = endTime - startTime;
-        std::cout << "loadData took " << elapsedSeconds.count() << " seconds.\n";
-
-
-        std::cout << "Loaded " << analyzer.getTotalRecords() << " collision records\n\n";
-
-        // Example 1: Find collisions in Brooklyn
-        std::cout << "=== Collisions in Brooklyn ===\n";
-        auto brooklynCollisions = analyzer.findCollisionsInBorough("BROOKLYN");
-        printCollisions(brooklynCollisions);
-        analyzeCasualties(brooklynCollisions);
-
-        // Example 2: Find severe collisions
-        std::cout << "\n=== Severe Collisions (5+ injuries) ===\n";
-        auto severeCollisions = analyzer.findCollisionsByInjuryCount(5, 999);
-        printCollisions(severeCollisions);
-       // analyzeVehicleTypes(severeCollisions);
-
-        // Example 3: Find collisions in Lower Manhattan
-        std::cout << "\n=== Collisions in Lower Manhattan ===\n";
-        auto areaCollisions = analyzer.findCollisionsInArea(
-            40.7000, 40.7200,  // latitude range
-            -74.0100, -73.9900 // longitude range
-        );
-        printCollisions(areaCollisions);
-
-        // Example 4: Find taxi-involved collisions
-        std::cout << "\n=== Taxi-involved Collisions ===\n";
-        auto taxiCollisions = analyzer.findCollisionsByVehicleType("TAXI");
-        printCollisions(taxiCollisions);
-        analyzeCasualties(taxiCollisions);
-
-        // Example 5: Find collisions by date range
-        std::cout << "\n=== Collisions in January 2024 ===\n";
-        auto januaryCollisions = analyzer.findCollisionsInDateRange("2024-01-01", "2024-01-31");
-        printCollisions(januaryCollisions);
-       // analyzeVehicleTypes(januaryCollisions);
-
-        // Example 6: Find collisions with cyclist fatalities
-        std::cout << "\n=== Collisions with Cyclist Fatalities ===\n";
-        auto cyclistFatalities = analyzer.findCollisionsByFatalityCount(1, 999);
-        printCollisions(cyclistFatalities);
-        analyzeCasualties(cyclistFatalities);
+        nycollision::CSVParser parser;
+        
+        // Test original implementation
+        std::cout << "=== Testing Original Implementation ===\n";
+        nycollision::DataSet originalDataset;
+        double originalLoadTime = measureTime([&]() {
+            originalDataset.loadFromFile(argv[1], parser);
+        });
+        std::cout << "Loaded " << originalDataset.size() << " records in "
+                  << std::fixed << std::setprecision(2) << originalLoadTime << "ms\n\n";
+        runPerformanceTests(originalDataset);
+        
+        // Test vectorized implementation
+        std::cout << "=== Testing Vectorized Implementation ===\n";
+        nycollision::VectorizedDataSet vectorizedDataset;
+        double vectorizedLoadTime = measureTime([&]() {
+            vectorizedDataset.loadFromFile(argv[1], parser);
+        });
+        std::cout << "Loaded " << vectorizedDataset.size() << " records in "
+                  << vectorizedLoadTime << "ms\n\n";
+        runPerformanceTests(vectorizedDataset);
+        
+        // Print performance comparison
+        std::cout << "=== Performance Comparison ===\n"
+                  << "Load time improvement: "
+                  << std::setprecision(1)
+                  << ((originalLoadTime - vectorizedLoadTime) / originalLoadTime * 100)
+                  << "%\n";
 
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;

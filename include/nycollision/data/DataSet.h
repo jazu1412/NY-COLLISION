@@ -12,6 +12,8 @@
 #include <iostream>
 #include <iomanip>
 #include <omp.h>
+#include "../core/Config.h"
+
 
 namespace nycollision {
 
@@ -123,19 +125,8 @@ private:
     Records convertToInterfaceRecords(const std::vector<std::shared_ptr<Record>>& records) const {
 
    // If you want to fix the thread count:
-     #ifdef _OPENMP
-      std::cout << "setting thread count in openmp " << " \n";
-      omp_set_num_threads(13);
-      #pragma omp parallel
-    {
-        #pragma omp master
-        {
-            std::cout << "Inside parallel region: " 
-                      << omp_get_num_threads() 
-                      << " threads\n";
-        }
-    }
-      #endif
+    nycollision::config::initializeOpenMP();
+
      
  
 
