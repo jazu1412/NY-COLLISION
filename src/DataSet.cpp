@@ -4,6 +4,8 @@
 namespace nycollision {
 
 namespace {
+     // If you want to fix the thread count:
+   
     // Initialize spatial grid with default coverage of NYC area
     std::vector<DataSet::GridCell> createSpatialGrid() {
         std::vector<DataSet::GridCell> grid;
@@ -52,17 +54,6 @@ DataSet::Records DataSet::queryByGeoBounds(
         }
     }
     std::cout << "calling from queryByGeoBounds" << " .\n";
-    return convertToInterfaceRecords(result);
-}
-
-DataSet::Records DataSet::queryByBorough(const std::string& borough) const {
-    std::vector<std::shared_ptr<Record>> result;
-    for (const auto& record : records_) {
-        if (record->getBorough() == borough) {
-            result.push_back(record);
-        }
-    }
-    std::cout << "calling from queryByBorough" << " .\n";
     return convertToInterfaceRecords(result);
 }
 

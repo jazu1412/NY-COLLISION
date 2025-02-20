@@ -25,12 +25,6 @@ public:
     ) const = 0;
 
     /**
-     * @brief Borough-based query
-     * @return Records matching the specified borough name
-     */
-    virtual Records queryByBorough(const std::string& borough) const = 0;
-
-    /**
      * @brief ZIP code-based query
      * @return Records matching the specified ZIP code
      */

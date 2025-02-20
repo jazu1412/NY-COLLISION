@@ -41,7 +41,6 @@ public:
 
     // IDataSet interface implementation
     Records queryByGeoBounds(float minLat, float maxLat, float minLon, float maxLon) const override;
-    Records queryByBorough(const std::string& borough) const override;
     Records queryByZipCode(const std::string& zipCode) const override;
     Records queryByDateRange(const Date& start, const Date& end) const override;
     Records queryByVehicleType(const std::string& vehicleType) const override;
@@ -98,7 +97,6 @@ private:
     
     // Indices for efficient querying
     std::unordered_map<int, size_t> key_to_index;
-    std::unordered_map<std::string, std::vector<size_t>> borough_index;
     std::unordered_map<std::string, std::vector<size_t>> zip_index;
     std::map<Date, std::vector<size_t>> date_index;
     

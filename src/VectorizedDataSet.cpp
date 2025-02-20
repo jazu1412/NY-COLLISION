@@ -93,7 +93,6 @@ void VectorizedDataSet::loadFromFile(const std::string& filename, const IParser&
     
     // Pre-allocate vectors
     unique_keys.reserve(lineCount);
-    boroughs.reserve(lineCount);
     zip_codes.reserve(lineCount);
     latitudes.reserve(lineCount);
     longitudes.reserve(lineCount);
@@ -131,8 +130,7 @@ void VectorizedDataSet::loadFromFile(const std::string& filename, const IParser&
         std::vector<size_t> local_indices;
         local_indices.reserve(lines.size() / omp_get_num_threads());
         
-           std::cout << "no of threads active in loadfromfile - vectorized" << omp_get_num_threads() << " \n";
-
+       // std::cout << "no of threads active in loadfromfile - vectorized" << omp_get_num_threads() << " \n";
 
         #pragma omp for schedule(dynamic)
     #endif
@@ -149,7 +147,6 @@ void VectorizedDataSet::loadFromFile(const std::string& filename, const IParser&
                     index = unique_keys.size();
                     // Add to vectorized storage
                     unique_keys.push_back(record->getUniqueKey());
-                    boroughs.push_back(record->getBorough());
                     zip_codes.push_back(record->getZipCode());
                     auto loc = record->getLocation();
                     latitudes.push_back(loc.latitude);
@@ -190,7 +187,6 @@ void VectorizedDataSet::loadFromFile(const std::string& filename, const IParser&
                     
                     // Update indices
                     key_to_index[record->getUniqueKey()] = index;
-                    borough_index[record->getBorough()].push_back(index);
                     zip_index[record->getZipCode()].push_back(index);
                     date_index[dt].push_back(index);
                     
@@ -243,7 +239,6 @@ std::shared_ptr<Record> VectorizedDataSet::createRecord(size_t index) const {
     auto record = std::make_shared<Record>();
     
     record->setUniqueKey(unique_keys[index]);
-    record->setBorough(boroughs[index]);
     record->setZipCode(zip_codes[index]);
     
     GeoCoordinate loc{latitudes[index], longitudes[index]};
@@ -294,8 +289,7 @@ VectorizedDataSet::Records VectorizedDataSet::createRecordsFromIndices(
     {
         Records local_results;
         local_results.reserve(indices.size() / omp_get_num_threads());
-          std::cout << "no of threads active in createRecordsFromIndices - vectorized" << omp_get_num_threads() << " \n";
-
+       // std::cout << "no of threads active in createRecordsFromIndices - vectorized" << omp_get_num_threads() << " \n";
 
         #pragma omp for schedule(dynamic)
         for (size_t i = 0; i < indices.size(); ++i) {
@@ -360,11 +354,6 @@ VectorizedDataSet::Records VectorizedDataSet::queryByGeoBounds(
     return createRecordsFromIndices(result_indices);
 }
 
-VectorizedDataSet::Records VectorizedDataSet::queryByBorough(const std::string& borough) const {
-    auto it = borough_index.find(borough);
-    return it != borough_index.end() ? createRecordsFromIndices(it->second) : Records{};
-}
-
 VectorizedDataSet::Records VectorizedDataSet::queryByZipCode(const std::string& zipCode) const {
     auto it = zip_index.find(zipCode);
     return it != zip_index.end() ? createRecordsFromIndices(it->second) : Records{};
@@ -427,9 +416,6 @@ VectorizedDataSet::Records VectorizedDataSet::queryByInjuryRange(
     auto endIt = injury_index.upper_bound(maxInjuries);
     
     size_t total_size = std::distance(startIt, endIt);
-
-
-
     
     #ifdef _OPENMP
     #pragma omp parallel

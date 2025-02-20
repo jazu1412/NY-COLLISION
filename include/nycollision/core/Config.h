@@ -9,7 +9,7 @@ namespace nycollision {
 namespace config {
 
 // OpenMP configuration
-constexpr int NUM_THREADS = 11;
+constexpr int NUM_THREADS = 5;
 
 inline void initializeOpenMP() {
     #ifdef _OPENMP

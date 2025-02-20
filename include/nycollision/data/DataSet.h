@@ -87,9 +87,9 @@ public:
         }
     }
 
-    auto endTime = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> elapsedSeconds = endTime - startTime;
-    std::cout << "loadFromFile took " << elapsedSeconds.count() << " seconds.\n";
+    // auto endTime = std::chrono::high_resolution_clock::now();
+    // std::chrono::duration<double> elapsedSeconds = endTime - startTime;
+    // std::cout << "loadFromFile took " << elapsedSeconds.count() << " seconds.\n";
 }
 
     // IDataSet interface implementation
@@ -98,7 +98,6 @@ public:
         float minLon, float maxLon
     ) const override;
 
-    Records queryByBorough(const std::string& borough) const override;
     Records queryByZipCode(const std::string& zipCode) const override;
     Records queryByDateRange(const Date& start, const Date& end) const override;
     Records queryByVehicleType(const std::string& vehicleType) const override;
@@ -124,8 +123,7 @@ private:
     // Helper to convert internal records to interface records
     Records convertToInterfaceRecords(const std::vector<std::shared_ptr<Record>>& records) const {
 
-   // If you want to fix the thread count:
-    nycollision::config::initializeOpenMP();
+  
 
      
  
@@ -144,10 +142,10 @@ private:
     //     }
         auto endTime = std::chrono::high_resolution_clock::now();
 
-        std::chrono::duration<double> elapsedSeconds = endTime - startTime;
-        std::cout << "convertToInterfaceRecords took " << elapsedSeconds.count() << " seconds.\n";
+        // std::chrono::duration<double> elapsedSeconds = endTime - startTime;
+        // std::cout << "convertToInterfaceRecords took " << elapsedSeconds.count() << " seconds.\n";
 
-        std::cout << "convertToInterfaceRecords result size is " << result.size() << "  records.\n";
+        // std::cout << "convertToInterfaceRecords result size is " << result.size() << "  records.\n";
         return result;
     }
 
@@ -159,7 +157,6 @@ private:
 
     // Indices for efficient querying
     std::unordered_map<int, std::shared_ptr<Record>> keyIndex_;
-    std::unordered_map<std::string, std::vector<std::shared_ptr<Record>>> boroughIndex_;
     std::unordered_map<std::string, std::vector<std::shared_ptr<Record>>> zipIndex_;
     std::map<Date, std::vector<std::shared_ptr<Record>>> dateIndex_;
     
