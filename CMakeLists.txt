@@ -36,6 +36,7 @@ set(CORE_HEADERS
     include/nycollision/core/Types.h
     include/nycollision/core/IRecord.h
     include/nycollision/core/Record.h
+    include/nycollision/core/AlignedAllocator.h
 )
 
 set(DATA_HEADERS

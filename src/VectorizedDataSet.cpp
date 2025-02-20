@@ -58,7 +58,7 @@ namespace {
 size_t VectorizedDataSet::addToStringPool(const std::string& str, std::vector<std::string>& pool) {
     if (str.empty()) return static_cast<size_t>(-1);
     
-    // Linear search is fine for small pools, could be optimized with a hash map for larger datasets
+   
     auto it = std::find(pool.begin(), pool.end(), str);
     if (it != pool.end()) {
         return std::distance(pool.begin(), it);
@@ -284,24 +284,45 @@ VectorizedDataSet::Records VectorizedDataSet::createRecordsFromIndices(
     Records result;
     result.reserve(indices.size());
     
+    // Use a single parallel region for better efficiency
     #ifdef _OPENMP
+    const size_t chunk_size = 64; // Process records in chunks for better cache utilization
     #pragma omp parallel
     {
         Records local_results;
-        local_results.reserve(indices.size() / omp_get_num_threads());
-       // std::cout << "no of threads active in createRecordsFromIndices - vectorized" << omp_get_num_threads() << " \n";
-
-        #pragma omp for schedule(dynamic)
+        local_results.reserve(chunk_size);
+        
+        #pragma omp for schedule(static, chunk_size) nowait
         for (size_t i = 0; i < indices.size(); ++i) {
-            local_results.push_back(createRecord(indices[i]));
+            auto record = createRecord(indices[i]);
+            
+            // Batch the critical section
+            if (local_results.size() >= chunk_size) {
+                #pragma omp critical
+                {
+                    result.insert(result.end(), 
+                                std::make_move_iterator(local_results.begin()),
+                                std::make_move_iterator(local_results.end()));
+                    local_results.clear();
+                    local_results.reserve(chunk_size);
+                }
+            }
+            local_results.push_back(std::move(record));
         }
         
-        #pragma omp critical
-        result.insert(result.end(), local_results.begin(), local_results.end());
+        // Final batch
+        if (!local_results.empty()) {
+            #pragma omp critical
+            {
+                result.insert(result.end(),
+                            std::make_move_iterator(local_results.begin()),
+                            std::make_move_iterator(local_results.end()));
+            }
+        }
     }
     #else
-    for (size_t i = 0; i < indices.size(); ++i) {
-        result.push_back(createRecord(indices[i]));
+    for (size_t idx : indices) {
+        result.push_back(createRecord(idx));
     }
     #endif
     
@@ -313,23 +334,20 @@ VectorizedDataSet::Records VectorizedDataSet::queryByGeoBounds(
     float minLon, float maxLon
 ) const {
     std::vector<size_t> result_indices;
+    const size_t size = latitudes.size();
+    result_indices.reserve(size / 4); // Reserve some space to avoid reallocations
     
     #ifdef _OPENMP
     #pragma omp parallel
     {
         std::vector<size_t> local_indices;
+        local_indices.reserve(size / (4 * omp_get_num_threads()));
         
-        #pragma omp for schedule(dynamic)
-        for (size_t cell_idx = 0; cell_idx < spatial_grid.size(); ++cell_idx) {
-            const auto& cell = spatial_grid[cell_idx];
-            if (cell.maxLat >= minLat && cell.minLat <= maxLat &&
-                cell.maxLon >= minLon && cell.minLon <= maxLon) {
-                for (size_t idx : cell.indices) {
-                    if (latitudes[idx] >= minLat && latitudes[idx] <= maxLat &&
-                        longitudes[idx] >= minLon && longitudes[idx] <= maxLon) {
-                        local_indices.push_back(idx);
-                    }
-                }
+        #pragma omp for simd schedule(static)
+        for (size_t i = 0; i < size; ++i) {
+            if (latitudes[i] >= minLat && latitudes[i] <= maxLat &&
+                longitudes[i] >= minLon && longitudes[i] <= maxLon) {
+                local_indices.push_back(i);
             }
         }
         
@@ -337,16 +355,10 @@ VectorizedDataSet::Records VectorizedDataSet::queryByGeoBounds(
         result_indices.insert(result_indices.end(), local_indices.begin(), local_indices.end());
     }
     #else
-    for (size_t cell_idx = 0; cell_idx < spatial_grid.size(); ++cell_idx) {
-        const auto& cell = spatial_grid[cell_idx];
-        if (cell.maxLat >= minLat && cell.minLat <= maxLat &&
-            cell.maxLon >= minLon && cell.minLon <= maxLon) {
-            for (size_t idx : cell.indices) {
-                if (latitudes[idx] >= minLat && latitudes[idx] <= maxLat &&
-                    longitudes[idx] >= minLon && longitudes[idx] <= maxLon) {
-                    result_indices.push_back(idx);
-                }
-            }
+    for (size_t i = 0; i < size; ++i) {
+        if (latitudes[i] >= minLat && latitudes[i] <= maxLat &&
+            longitudes[i] >= minLon && longitudes[i] <= maxLon) {
+            result_indices.push_back(i);
         }
     }
     #endif
@@ -407,44 +419,84 @@ VectorizedDataSet::Records VectorizedDataSet::queryByVehicleType(
     return it != vehicle_type_index.end() ? createRecordsFromIndices(it->second) : Records{};
 }
 
-VectorizedDataSet::Records VectorizedDataSet::queryByInjuryRange(
-    int minInjuries,
-    int maxInjuries
-) const {
-    std::vector<size_t> result_indices;
-    auto startIt = injury_index.lower_bound(minInjuries);
-    auto endIt = injury_index.upper_bound(maxInjuries);
+// VectorizedDataSet::Records VectorizedDataSet::queryByInjuryRange(
+//     int minInjuries,
+//     int maxInjuries
+// ) const {
+//     std::vector<size_t> result_indices;
+//     auto startIt = injury_index.lower_bound(minInjuries);
+//     auto endIt = injury_index.upper_bound(maxInjuries);
     
-    size_t total_size = std::distance(startIt, endIt);
+//     size_t total_size = std::distance(startIt, endIt);
     
-    #ifdef _OPENMP
-    #pragma omp parallel
+//     #ifdef _OPENMP
+//     #pragma omp parallel
+//     {
+//         std::vector<size_t> local_indices;
+        
+//         #pragma omp for schedule(dynamic)
+//         for (size_t i = 0; i < total_size; ++i) {
+//             auto it = std::next(startIt, i);
+//             local_indices.insert(local_indices.end(),
+//                                it->second.begin(),
+//                                it->second.end());
+//         }
+        
+//         #pragma omp critical
+//         result_indices.insert(result_indices.end(),
+//                             local_indices.begin(),
+//                             local_indices.end());
+//     }
+//     #else
+//     for (auto it = startIt; it != endIt; ++it) {
+//         result_indices.insert(result_indices.end(),
+//                             it->second.begin(),
+//                             it->second.end());
+//     }
+//     #endif
+    
+//     return createRecordsFromIndices(result_indices);
+// }
+// Query by scanning persons_injured
+VectorizedDataSet::Records
+VectorizedDataSet::queryByInjuryRange(int minInjuries, int maxInjuries) const
+{
+    // We'll gather indices first
+    std::vector<size_t> resultIndices;
+    resultIndices.reserve(persons_injured.size());
+
+#ifdef _OPENMP
+#pragma omp parallel
     {
-        std::vector<size_t> local_indices;
-        
-        #pragma omp for schedule(dynamic)
-        for (size_t i = 0; i < total_size; ++i) {
-            auto it = std::next(startIt, i);
-            local_indices.insert(local_indices.end(),
-                               it->second.begin(),
-                               it->second.end());
+        std::vector<size_t> localIdx;
+        localIdx.reserve(persons_injured.size() / omp_get_num_threads());
+
+        #pragma omp for
+        for (size_t i = 0; i < persons_injured.size(); ++i) {
+            int val = persons_injured[i];
+            if (val >= minInjuries && val <= maxInjuries) {
+                localIdx.push_back(i);
+            }
         }
-        
+
         #pragma omp critical
-        result_indices.insert(result_indices.end(),
-                            local_indices.begin(),
-                            local_indices.end());
+        {
+            resultIndices.insert(resultIndices.end(), localIdx.begin(), localIdx.end());
+        }
     }
-    #else
-    for (auto it = startIt; it != endIt; ++it) {
-        result_indices.insert(result_indices.end(),
-                            it->second.begin(),
-                            it->second.end());
+#else
+    for (size_t i = 0; i < persons_injured.size(); ++i) {
+        int val = persons_injured[i];
+        if (val >= minInjuries && val <= maxInjuries) {
+            resultIndices.push_back(i);
+        }
     }
-    #endif
-    
-    return createRecordsFromIndices(result_indices);
+#endif
+
+    // Now convert indices -> Records
+    return createRecordsFromIndices(resultIndices);
 }
+
 
 VectorizedDataSet::Records VectorizedDataSet::queryByFatalityRange(
     int minFatalities,

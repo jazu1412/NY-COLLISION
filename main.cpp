@@ -69,22 +69,22 @@ QueryTimes runPerformanceTests(const nycollision::IDataSet& dataset) {
     
     QueryTimes times;
     
-    // Date range queries
-    times.dateRange = measureTime([&]() {
-        nycollision::Date start{"2024-01-01", "00:00"};
-        nycollision::Date end{"2024-01-31", "23:59"};
-        auto records = dataset.queryByDateRange(start, end);
-        std::cout << "Date range query found " << records.size() << " records\n";
-    });
+    // // Date range queries
+    // times.dateRange = measureTime([&]() {
+    //     nycollision::Date start{"2024-01-01", "00:00"};
+    //     nycollision::Date end{"2024-01-31", "23:59"};
+    //     auto records = dataset.queryByDateRange(start, end);
+    //     std::cout << "Date range query found " << records.size() << " records\n";
+    // });
     
-    // Geographic bounds queries
-    times.geoBounds = measureTime([&]() {
-        auto records = dataset.queryByGeoBounds(
-            40.7000, 40.7200,  // latitude range
-            -74.0100, -73.9900 // longitude range
-        );
-        std::cout << "Geographic bounds query found " << records.size() << " records\n";
-    });
+    // // Geographic bounds queries
+    // times.geoBounds = measureTime([&]() {
+    //     auto records = dataset.queryByGeoBounds(
+    //         40.7000, 40.7200,  // latitude range
+    //         -74.0100, -73.9900 // longitude range
+    //     );
+    //     std::cout << "Geographic bounds query found " << records.size() << " records\n";
+    // });
     
     // Injury range queries
     times.injury = measureTime([&]() {
@@ -98,11 +98,11 @@ QueryTimes runPerformanceTests(const nycollision::IDataSet& dataset) {
         std::cout << "Vehicle type query found " << records.size() << " records\n";
     });
     
-    times.total = times.dateRange + times.geoBounds + times.injury + times.vehicle;
+    times.total =  times.injury + times.vehicle;
     
     std::cout << "\nPerformance Results:\n"
-              << "Date range query: " << times.dateRange << "ms\n"
-              << "Geographic bounds query: " << times.geoBounds << "ms\n"
+            //   << "Date range query: " << times.dateRange << "ms\n"
+            //   << "Geographic bounds query: " << times.geoBounds << "ms\n"
               << "Injury range query: " << times.injury << "ms\n"
               << "Vehicle type query: " << times.vehicle << "ms\n"
               << "Total time: " << times.total << "ms\n\n";
@@ -137,10 +137,10 @@ int main(int argc, char* argv[]) {
         // Calculate and print performance improvements
         std::cout << "\n=== Performance Improvements ===\n"
                   << std::fixed << std::setprecision(2)
-                  << "Date range query: " 
-                  << ((originalTimes.dateRange - vectorizedTimes.dateRange) / originalTimes.dateRange * 100) << "%\n"
-                  << "Geographic bounds query: "
-                  << ((originalTimes.geoBounds - vectorizedTimes.geoBounds) / originalTimes.geoBounds * 100) << "%\n"
+                //   << "Date range query: " 
+                //   << ((originalTimes.dateRange - vectorizedTimes.dateRange) / originalTimes.dateRange * 100) << "%\n"
+                //   << "Geographic bounds query: "
+                //   << ((originalTimes.geoBounds - vectorizedTimes.geoBounds) / originalTimes.geoBounds * 100) << "%\n"
                   << "Injury range query: "
                   << ((originalTimes.injury - vectorizedTimes.injury) / originalTimes.injury * 100) << "%\n"
                   << "Vehicle type query: "

@@ -8,6 +8,7 @@
 #include <memory>
 #include <unordered_map>
 #include <map>
+#include "../core/AlignedAllocator.h"
 
 namespace nycollision {
 
@@ -21,6 +22,7 @@ class VectorizedDataSet : public IDataSet {
 public:
     using Records = std::vector<std::shared_ptr<const IRecord>>;
     using RecordPtr = std::shared_ptr<const IRecord>;
+  using IntAligned32Vec = std::vector<int, AlignedAllocator<int, 32>>;
 
     // Spatial index cell structure
     struct GridCell {
@@ -79,15 +81,39 @@ private:
     std::vector<std::string> dates;
     std::vector<std::string> times;
     
-    // Casualty data (aligned for potential SIMD operations)
-    alignas(32) std::vector<int> persons_injured;
-    alignas(32) std::vector<int> persons_killed;
-    alignas(32) std::vector<int> pedestrians_injured;
-    alignas(32) std::vector<int> pedestrians_killed;
-    alignas(32) std::vector<int> cyclists_injured;
-    alignas(32) std::vector<int> cyclists_killed;
-    alignas(32) std::vector<int> motorists_injured;
-    alignas(32) std::vector<int> motorists_killed;
+    // // Casualty data (aligned for potential SIMD operations)
+    // alignas(32) std::vector<int> persons_injured;
+    // alignas(32) std::vector<int> persons_killed;
+    // alignas(32) std::vector<int> pedestrians_injured;
+    // alignas(32) std::vector<int> pedestrians_killed;
+    // alignas(32) std::vector<int> cyclists_injured;
+    // alignas(32) std::vector<int> cyclists_killed;
+    // alignas(32) std::vector<int> motorists_injured;
+    // alignas(32) std::vector<int> motorists_killed;
+
+//       // Casualty data (aligned for potential SIMD operations)
+//      std::vector<int> persons_injured;
+//   std::vector<int> persons_killed;
+//      std::vector<int> pedestrians_injured;
+//    std::vector<int> pedestrians_killed;
+//    std::vector<int> cyclists_injured;
+//    std::vector<int> cyclists_killed;
+//     std::vector<int> motorists_injured;
+//    std::vector<int> motorists_killed;
+
+
+
+
+
+IntAligned32Vec persons_injured;
+IntAligned32Vec persons_killed;
+IntAligned32Vec pedestrians_injured;
+IntAligned32Vec pedestrians_killed;
+ IntAligned32Vec cyclists_injured;
+ IntAligned32Vec cyclists_killed;
+ IntAligned32Vec motorists_injured;
+ IntAligned32Vec motorists_killed;
+
     
     // Vehicle data (using indices into string pools for memory efficiency)
     std::vector<std::vector<size_t>> vehicle_type_indices;
