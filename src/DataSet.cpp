@@ -35,43 +35,8 @@ namespace {
 }
 
 void DataSet::addRecord(std::shared_ptr<Record> record) {
-    // Initialize spatial grid if not already done
-    if (spatialGrid_.empty()) {
-        spatialGrid_ = createSpatialGrid();
-    }
-
-    // Add to primary storage
+    // Simple storage without indexing
     records_.push_back(record);
-    
-    // Update indices
-    keyIndex_[record->getUniqueKey()] = record;
-    boroughIndex_[record->getBorough()].push_back(record);
-    zipIndex_[record->getZipCode()].push_back(record);
-    dateIndex_[record->getDateTime()].push_back(record);
-    
-    // Update spatial index
-    auto loc = record->getLocation();
-    for (auto& cell : spatialGrid_) {
-        if (loc.latitude >= cell.minLat && loc.latitude <= cell.maxLat &&
-            loc.longitude >= cell.minLon && loc.longitude <= cell.maxLon) {
-            cell.records.push_back(record);
-            break;
-        }
-    }
-    
-    // Update range indices
-    const auto& stats = record->getCasualtyStats();
-    injuryIndex_[stats.getTotalInjuries()].push_back(record);
-    fatalityIndex_[stats.getTotalFatalities()].push_back(record);
-    pedestrianFatalityIndex_[stats.pedestrians_killed].push_back(record);
-    cyclistFatalityIndex_[stats.cyclists_killed].push_back(record);
-    motoristFatalityIndex_[stats.motorists_killed].push_back(record);
-    
-    // Update vehicle type index
-    const auto& vehicleInfo = record->getVehicleInfo();
-    for (const auto& type : vehicleInfo.vehicle_types) {
-        vehicleTypeIndex_[type].push_back(record);
-    }
 }
 
 DataSet::Records DataSet::queryByGeoBounds(
@@ -79,18 +44,11 @@ DataSet::Records DataSet::queryByGeoBounds(
     float minLon, float maxLon
 ) const {
     std::vector<std::shared_ptr<Record>> result;
-    for (const auto& cell : spatialGrid_) {
-        // Check if cell overlaps with query bounds
-        if (cell.maxLat >= minLat && cell.minLat <= maxLat &&
-            cell.maxLon >= minLon && cell.minLon <= maxLon) {
-            // Check individual records in overlapping cells
-            for (const auto& record : cell.records) {
-                auto loc = record->getLocation();
-                if (loc.latitude >= minLat && loc.latitude <= maxLat &&
-                    loc.longitude >= minLon && loc.longitude <= maxLon) {
-                    result.push_back(record);
-                }
-            }
+    for (const auto& record : records_) {
+        auto loc = record->getLocation();
+        if (loc.latitude >= minLat && loc.latitude <= maxLat &&
+            loc.longitude >= minLon && loc.longitude <= maxLon) {
+            result.push_back(record);
         }
     }
     std::cout << "calling from queryByGeoBounds" << " .\n";
@@ -98,42 +56,59 @@ DataSet::Records DataSet::queryByGeoBounds(
 }
 
 DataSet::Records DataSet::queryByBorough(const std::string& borough) const {
-    auto it = boroughIndex_.find(borough);
-     std::cout << "calling from queryByBorough" << " .\n";
-    return it != boroughIndex_.end() ? convertToInterfaceRecords(it->second) : Records{};
+    std::vector<std::shared_ptr<Record>> result;
+    for (const auto& record : records_) {
+        if (record->getBorough() == borough) {
+            result.push_back(record);
+        }
+    }
+    std::cout << "calling from queryByBorough" << " .\n";
+    return convertToInterfaceRecords(result);
 }
 
 DataSet::Records DataSet::queryByZipCode(const std::string& zipCode) const {
-    auto it = zipIndex_.find(zipCode);
-      std::cout << "calling from queryByZipCode" << " .\n";
-    return it != zipIndex_.end() ? convertToInterfaceRecords(it->second) : Records{};
+    std::vector<std::shared_ptr<Record>> result;
+    for (const auto& record : records_) {
+        if (record->getZipCode() == zipCode) {
+            result.push_back(record);
+        }
+    }
+    std::cout << "calling from queryByZipCode" << " .\n";
+    return convertToInterfaceRecords(result);
 }
 
 DataSet::Records DataSet::queryByDateRange(const Date& start, const Date& end) const {
     std::vector<std::shared_ptr<Record>> result;
-    auto startIt = dateIndex_.lower_bound(start);
-    auto endIt = dateIndex_.upper_bound(end);
-    
-    for (auto it = startIt; it != endIt; ++it) {
-        result.insert(result.end(), it->second.begin(), it->second.end());
+    for (const auto& record : records_) {
+        const auto& date = record->getDateTime();
+        if (date >= start && date <= end) {
+            result.push_back(record);
+        }
     }
     std::cout << "calling from queryByDateRange" << " .\n";
     return convertToInterfaceRecords(result);
 }
 
 DataSet::Records DataSet::queryByVehicleType(const std::string& vehicleType) const {
-    auto it = vehicleTypeIndex_.find(vehicleType);
+    std::vector<std::shared_ptr<Record>> result;
+    for (const auto& record : records_) {
+        const auto& info = record->getVehicleInfo();
+        if (std::find(info.vehicle_types.begin(), info.vehicle_types.end(), vehicleType) != info.vehicle_types.end()) {
+            result.push_back(record);
+        }
+    }
     std::cout << "calling from queryByVehicleType" << " .\n";
-    return it != vehicleTypeIndex_.end() ? convertToInterfaceRecords(it->second) : Records{};
+    return convertToInterfaceRecords(result);
 }
 
 DataSet::Records DataSet::queryByInjuryRange(int minInjuries, int maxInjuries) const {
     std::vector<std::shared_ptr<Record>> result;
-    auto startIt = injuryIndex_.lower_bound(minInjuries);
-    auto endIt = injuryIndex_.upper_bound(maxInjuries);
-    
-    for (auto it = startIt; it != endIt; ++it) {
-        result.insert(result.end(), it->second.begin(), it->second.end());
+    for (const auto& record : records_) {
+        const auto& stats = record->getCasualtyStats();
+        int total = stats.getTotalInjuries();
+        if (total >= minInjuries && total <= maxInjuries) {
+            result.push_back(record);
+        }
     }
     std::cout << "calling from queryByInjuryRange" << " .\n";
     return convertToInterfaceRecords(result);
@@ -141,54 +116,59 @@ DataSet::Records DataSet::queryByInjuryRange(int minInjuries, int maxInjuries) c
 
 DataSet::Records DataSet::queryByFatalityRange(int minFatalities, int maxFatalities) const {
     std::vector<std::shared_ptr<Record>> result;
-    auto startIt = fatalityIndex_.lower_bound(minFatalities);
-    auto endIt = fatalityIndex_.upper_bound(maxFatalities);
-    
-    for (auto it = startIt; it != endIt; ++it) {
-        result.insert(result.end(), it->second.begin(), it->second.end());
+    for (const auto& record : records_) {
+        const auto& stats = record->getCasualtyStats();
+        int total = stats.getTotalFatalities();
+        if (total >= minFatalities && total <= maxFatalities) {
+            result.push_back(record);
+        }
     }
-     std::cout << "calling from queryByFatalityRange" << " .\n";
+    std::cout << "calling from queryByFatalityRange" << " .\n";
     return convertToInterfaceRecords(result);
 }
 
 DataSet::RecordPtr DataSet::queryByUniqueKey(int key) const {
-    auto it = keyIndex_.find(key);
-    return it != keyIndex_.end() ? std::static_pointer_cast<const IRecord>(it->second) : nullptr;
+    for (const auto& record : records_) {
+        if (record->getUniqueKey() == key) {
+            return std::static_pointer_cast<const IRecord>(record);
+        }
+    }
+    return nullptr;
 }
 
 DataSet::Records DataSet::queryByPedestrianFatalities(int minFatalities, int maxFatalities) const {
     std::vector<std::shared_ptr<Record>> result;
-    auto startIt = pedestrianFatalityIndex_.lower_bound(minFatalities);
-    auto endIt = pedestrianFatalityIndex_.upper_bound(maxFatalities);
-    
-    for (auto it = startIt; it != endIt; ++it) {
-        result.insert(result.end(), it->second.begin(), it->second.end());
+    for (const auto& record : records_) {
+        const auto& stats = record->getCasualtyStats();
+        if (stats.pedestrians_killed >= minFatalities && stats.pedestrians_killed <= maxFatalities) {
+            result.push_back(record);
+        }
     }
-     std::cout << "calling from queryByPedestrianFatalities" << " .\n";
+    std::cout << "calling from queryByPedestrianFatalities" << " .\n";
     return convertToInterfaceRecords(result);
 }
 
 DataSet::Records DataSet::queryByCyclistFatalities(int minFatalities, int maxFatalities) const {
     std::vector<std::shared_ptr<Record>> result;
-    auto startIt = cyclistFatalityIndex_.lower_bound(minFatalities);
-    auto endIt = cyclistFatalityIndex_.upper_bound(maxFatalities);
-    
-    for (auto it = startIt; it != endIt; ++it) {
-        result.insert(result.end(), it->second.begin(), it->second.end());
+    for (const auto& record : records_) {
+        const auto& stats = record->getCasualtyStats();
+        if (stats.cyclists_killed >= minFatalities && stats.cyclists_killed <= maxFatalities) {
+            result.push_back(record);
+        }
     }
-     std::cout << "calling from queryByCyclistFatalities" << " .\n";
+    std::cout << "calling from queryByCyclistFatalities" << " .\n";
     return convertToInterfaceRecords(result);
 }
 
 DataSet::Records DataSet::queryByMotoristFatalities(int minFatalities, int maxFatalities) const {
     std::vector<std::shared_ptr<Record>> result;
-    auto startIt = motoristFatalityIndex_.lower_bound(minFatalities);
-    auto endIt = motoristFatalityIndex_.upper_bound(maxFatalities);
-    
-    for (auto it = startIt; it != endIt; ++it) {
-        result.insert(result.end(), it->second.begin(), it->second.end());
+    for (const auto& record : records_) {
+        const auto& stats = record->getCasualtyStats();
+        if (stats.motorists_killed >= minFatalities && stats.motorists_killed <= maxFatalities) {
+            result.push_back(record);
+        }
     }
-     std::cout << "calling from queryByMotoristFatalities" << " .\n";
+    std::cout << "calling from queryByMotoristFatalities" << " .\n";
     return convertToInterfaceRecords(result);
 }
 
