@@ -64,37 +64,45 @@ private:
     // Helper to add a string to a pool and return its index
     size_t addToStringPool(const std::string& str, std::vector<std::string>& pool);
 
-    // Vectorized storage (SoA pattern)
-    std::vector<int> unique_keys;
+    // Vectorized storage (SoA pattern) with cache line alignment
+    alignas(64) std::vector<int> unique_keys;
     
-    // Location data
-    std::vector<std::string> boroughs;
-    std::vector<std::string> zip_codes;
-    std::vector<float> latitudes;
-    std::vector<float> longitudes;
-    std::vector<std::string> on_streets;
-    std::vector<std::string> cross_streets;
-    std::vector<std::string> off_streets;
+    // Location data - group frequently accessed data together
+    struct alignas(64) LocationData {
+        std::vector<float> latitudes;
+        std::vector<float> longitudes;
+        std::vector<std::string> boroughs;
+        std::vector<std::string> zip_codes;
+        std::vector<std::string> on_streets;
+        std::vector<std::string> cross_streets;
+        std::vector<std::string> off_streets;
+    } location_data;
     
     // Date/Time data
-    std::vector<std::string> dates;
-    std::vector<std::string> times;
+    struct alignas(64) TimeData {
+        std::vector<std::string> dates;
+        std::vector<std::string> times;
+    } time_data;
     
-    // Casualty data (aligned for potential SIMD operations)
-    alignas(32) std::vector<int> persons_injured;
-    alignas(32) std::vector<int> persons_killed;
-    alignas(32) std::vector<int> pedestrians_injured;
-    alignas(32) std::vector<int> pedestrians_killed;
-    alignas(32) std::vector<int> cyclists_injured;
-    alignas(32) std::vector<int> cyclists_killed;
-    alignas(32) std::vector<int> motorists_injured;
-    alignas(32) std::vector<int> motorists_killed;
+    // Casualty data grouped for SIMD operations
+    struct alignas(64) CasualtyData {
+        std::vector<int> persons_injured;
+        std::vector<int> persons_killed;
+        std::vector<int> pedestrians_injured;
+        std::vector<int> pedestrians_killed;
+        std::vector<int> cyclists_injured;
+        std::vector<int> cyclists_killed;
+        std::vector<int> motorists_injured;
+        std::vector<int> motorists_killed;
+    } casualty_data;
     
-    // Vehicle data (using indices into string pools for memory efficiency)
-    std::vector<std::vector<size_t>> vehicle_type_indices;
-    std::vector<std::vector<size_t>> contributing_factor_indices;
-    std::vector<std::string> vehicle_type_pool;
-    std::vector<std::string> contributing_factor_pool;
+    // Vehicle data grouped for better cache locality
+    struct alignas(64) VehicleData {
+        std::vector<std::vector<size_t>> type_indices;
+        std::vector<std::vector<size_t>> factor_indices;
+        std::vector<std::string> type_pool;
+        std::vector<std::string> factor_pool;
+    } vehicle_data;
     
     // Indices for efficient querying
     std::unordered_map<int, size_t> key_to_index;

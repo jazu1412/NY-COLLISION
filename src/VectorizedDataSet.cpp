@@ -19,8 +19,6 @@ VectorizedDataSet::VectorizedDataSet() {
 namespace {
     // Initialize spatial grid with default coverage of NYC area
     std::vector<VectorizedDataSet::GridCell> createSpatialGrid() {
-        std::vector<VectorizedDataSet::GridCell> grid;
-        
         // NYC approximate bounds
         const float MIN_LAT = 40.4774f;
         const float MAX_LAT = 40.9176f;
@@ -32,22 +30,19 @@ namespace {
         const float LAT_STEP = (MAX_LAT - MIN_LAT) / GRID_SIZE;
         const float LON_STEP = (MAX_LON - MIN_LON) / GRID_SIZE;
         
-        grid.reserve(GRID_SIZE * GRID_SIZE);
+        // Pre-allocate grid with exact size
+        std::vector<VectorizedDataSet::GridCell> grid(GRID_SIZE * GRID_SIZE);
         
         #ifdef _OPENMP
         #pragma omp parallel for collapse(2)
         #endif
         for (int i = 0; i < GRID_SIZE; ++i) {
             for (int j = 0; j < GRID_SIZE; ++j) {
-                VectorizedDataSet::GridCell cell;
-                cell.minLat = MIN_LAT + (i * LAT_STEP);
-                cell.maxLat = MIN_LAT + ((i + 1) * LAT_STEP);
-                cell.minLon = MIN_LON + (j * LON_STEP);
-                cell.maxLon = MIN_LON + ((j + 1) * LON_STEP);
-                #ifdef _OPENMP
-                #pragma omp critical
-                #endif
-                grid.push_back(cell);
+                const size_t idx = i * GRID_SIZE + j;
+                grid[idx].minLat = MIN_LAT + (i * LAT_STEP);
+                grid[idx].maxLat = MIN_LAT + ((i + 1) * LAT_STEP);
+                grid[idx].minLon = MIN_LON + (j * LON_STEP);
+                grid[idx].maxLon = MIN_LON + ((j + 1) * LON_STEP);
             }
         }
         
@@ -82,203 +77,348 @@ void VectorizedDataSet::loadFromFile(const std::string& filename, const IParser&
     }
 
     std::string line;
-    // Skip header line
-    std::getline(file, line);
-    
-    // First pass: count lines to pre-allocate vectors
-    size_t lineCount = 0;
-    while (std::getline(file, line)) {
-        ++lineCount;
-    }
-    
-    // Pre-allocate vectors
-    unique_keys.reserve(lineCount);
-    boroughs.reserve(lineCount);
-    zip_codes.reserve(lineCount);
-    latitudes.reserve(lineCount);
-    longitudes.reserve(lineCount);
-    on_streets.reserve(lineCount);
-    cross_streets.reserve(lineCount);
-    off_streets.reserve(lineCount);
-    dates.reserve(lineCount);
-    times.reserve(lineCount);
-    persons_injured.reserve(lineCount);
-    persons_killed.reserve(lineCount);
-    pedestrians_injured.reserve(lineCount);
-    pedestrians_killed.reserve(lineCount);
-    cyclists_injured.reserve(lineCount);
-    cyclists_killed.reserve(lineCount);
-    motorists_injured.reserve(lineCount);
-    motorists_killed.reserve(lineCount);
-    vehicle_type_indices.reserve(lineCount);
-    contributing_factor_indices.reserve(lineCount);
-    
-    // Reset file position and skip header again
-    file.clear();
-    file.seekg(0);
-    std::getline(file, line);
-    
-    // Second pass: parse records
+    std::getline(file, line); // Skip header
+
+    // Read all lines first
     std::vector<std::string> lines;
+    lines.reserve(2'700'000); // Reserve space for approximately 2.7M records
     while (std::getline(file, line)) {
-        lines.push_back(line);
+        lines.push_back(std::move(line));
     }
+
+    const size_t lineCount = lines.size();
+
+    // Pre-allocate all vectors to exact size
+    unique_keys.resize(lineCount);
     
-    // Parse records in parallel
+    // Location data
+    location_data.latitudes.resize(lineCount);
+    location_data.longitudes.resize(lineCount);
+    location_data.boroughs.resize(lineCount);
+    location_data.zip_codes.resize(lineCount);
+    location_data.on_streets.resize(lineCount);
+    location_data.cross_streets.resize(lineCount);
+    location_data.off_streets.resize(lineCount);
+    
+    // Time data
+    time_data.dates.resize(lineCount);
+    time_data.times.resize(lineCount);
+    
+    // Casualty data
+    casualty_data.persons_injured.resize(lineCount);
+    casualty_data.persons_killed.resize(lineCount);
+    casualty_data.pedestrians_injured.resize(lineCount);
+    casualty_data.pedestrians_killed.resize(lineCount);
+    casualty_data.cyclists_injured.resize(lineCount);
+    casualty_data.cyclists_killed.resize(lineCount);
+    casualty_data.motorists_injured.resize(lineCount);
+    casualty_data.motorists_killed.resize(lineCount);
+    
+    // Vehicle data
+    vehicle_data.type_indices.resize(lineCount);
+    vehicle_data.factor_indices.resize(lineCount);
+
+    // Use unordered_map for string pooling
+    std::unordered_map<std::string, size_t> vehicle_type_map;
+    std::unordered_map<std::string, size_t> contributing_factor_map;
+    vehicle_type_map.reserve(1000);  // Reserve space for estimated unique types
+    contributing_factor_map.reserve(1000);
+
+    // First pass: Parse records and fill arrays
     #ifdef _OPENMP
     #pragma omp parallel
     {
-        std::vector<size_t> local_indices;
-        local_indices.reserve(lines.size() / omp_get_num_threads());
-        
-           std::cout << "no of threads active in loadfromfile - vectorized" << omp_get_num_threads() << " \n";
+        // Thread-local maps for string pooling
+        std::unordered_map<std::string, size_t> local_vehicle_type_map;
+        std::unordered_map<std::string, size_t> local_contributing_factor_map;
+        local_vehicle_type_map.reserve(1000);
+        local_contributing_factor_map.reserve(1000);
 
-
-        #pragma omp for schedule(dynamic)
+        #pragma omp for schedule(dynamic, 1000)
     #endif
         for (size_t i = 0; i < lines.size(); ++i) {
             if (auto record = parser.parseRecord(lines[i])) {
-                size_t index;
+                // Store basic data
+                unique_keys[i] = record->getUniqueKey();
+                
+                // Location data
+                auto loc = record->getLocation();
+                location_data.latitudes[i] = loc.latitude;
+                location_data.longitudes[i] = loc.longitude;
+                location_data.boroughs[i] = record->getBorough();
+                location_data.zip_codes[i] = record->getZipCode();
+                location_data.on_streets[i] = record->getOnStreet();
+                location_data.cross_streets[i] = record->getCrossStreet();
+                location_data.off_streets[i] = record->getOffStreet();
+                
+                // Time data
                 auto dt = record->getDateTime();
+                time_data.dates[i] = dt.date;
+                time_data.times[i] = dt.time;
+                
+                // Casualty data
                 const auto& stats = record->getCasualtyStats();
-                
-                #ifdef _OPENMP
-                #pragma omp critical
-                #endif
-                {
-                    index = unique_keys.size();
-                    // Add to vectorized storage
-                    unique_keys.push_back(record->getUniqueKey());
-                    boroughs.push_back(record->getBorough());
-                    zip_codes.push_back(record->getZipCode());
-                    auto loc = record->getLocation();
-                    latitudes.push_back(loc.latitude);
-                    longitudes.push_back(loc.longitude);
-                    on_streets.push_back(record->getOnStreet());
-                    cross_streets.push_back(record->getCrossStreet());
-                    off_streets.push_back(record->getOffStreet());
-                    dates.push_back(dt.date);
-                    times.push_back(dt.time);
-                    persons_injured.push_back(stats.persons_injured);
-                    persons_killed.push_back(stats.persons_killed);
-                    pedestrians_injured.push_back(stats.pedestrians_injured);
-                    pedestrians_killed.push_back(stats.pedestrians_killed);
-                    cyclists_injured.push_back(stats.cyclists_injured);
-                    cyclists_killed.push_back(stats.cyclists_killed);
-                    motorists_injured.push_back(stats.motorists_injured);
-                    motorists_killed.push_back(stats.motorists_killed);
-                }
-                
-                // Process vehicle data
+                casualty_data.persons_injured[i] = stats.persons_injured;
+                casualty_data.persons_killed[i] = stats.persons_killed;
+                casualty_data.pedestrians_injured[i] = stats.pedestrians_injured;
+                casualty_data.pedestrians_killed[i] = stats.pedestrians_killed;
+                casualty_data.cyclists_injured[i] = stats.cyclists_injured;
+                casualty_data.cyclists_killed[i] = stats.cyclists_killed;
+                casualty_data.motorists_injured[i] = stats.motorists_injured;
+                casualty_data.motorists_killed[i] = stats.motorists_killed;
+
+                // Process vehicle data with thread-local maps
                 const auto& vehicleInfo = record->getVehicleInfo();
-                std::vector<size_t> type_indices;
-                for (const auto& type : vehicleInfo.vehicle_types) {
-                    type_indices.push_back(addToStringPool(type, vehicle_type_pool));
-                }
+                std::vector<size_t>& type_indices = vehicle_data.type_indices[i];
+                std::vector<size_t>& factor_indices = vehicle_data.factor_indices[i];
                 
-                std::vector<size_t> factor_indices;
-                for (const auto& factor : vehicleInfo.contributing_factors) {
-                    factor_indices.push_back(addToStringPool(factor, contributing_factor_pool));
-                }
-                
+                type_indices.reserve(vehicleInfo.vehicle_types.size());
+                factor_indices.reserve(vehicleInfo.contributing_factors.size());
+
                 #ifdef _OPENMP
-                #pragma omp critical
+                auto& type_map = local_vehicle_type_map;
+                auto& factor_map = local_contributing_factor_map;
+                #else
+                auto& type_map = vehicle_type_map;
+                auto& factor_map = contributing_factor_map;
                 #endif
-                {
-                    vehicle_type_indices.push_back(type_indices);
-                    contributing_factor_indices.push_back(factor_indices);
-                    
-                    // Update indices
-                    key_to_index[record->getUniqueKey()] = index;
-                    borough_index[record->getBorough()].push_back(index);
-                    zip_index[record->getZipCode()].push_back(index);
-                    date_index[dt].push_back(index);
-                    
-                    // Update range indices
-                    injury_index[stats.getTotalInjuries()].push_back(index);
-                    fatality_index[stats.getTotalFatalities()].push_back(index);
-                    pedestrian_fatality_index[stats.pedestrians_killed].push_back(index);
-                    cyclist_fatality_index[stats.cyclists_killed].push_back(index);
-                    motorist_fatality_index[stats.motorists_killed].push_back(index);
-                    
-                    // Update vehicle type index
-                    for (const auto& type : vehicleInfo.vehicle_types) {
-                        if (!type.empty()) {
-                            vehicle_type_index[type].push_back(index);
-                        }
+
+                for (const auto& type : vehicleInfo.vehicle_types) {
+                    if (!type.empty()) {
+                        auto [it, inserted] = type_map.try_emplace(type, type_map.size());
+                        type_indices.push_back(it->second);
                     }
                 }
-                
-                #ifdef _OPENMP
-                local_indices.push_back(index);
-                #endif
+
+                for (const auto& factor : vehicleInfo.contributing_factors) {
+                    if (!factor.empty()) {
+                        auto [it, inserted] = factor_map.try_emplace(factor, factor_map.size());
+                        factor_indices.push_back(it->second);
+                    }
+                }
             }
         }
+
     #ifdef _OPENMP
+        // Merge thread-local maps into global maps
+        #pragma omp critical
+        {
+            for (const auto& [str, idx] : local_vehicle_type_map) {
+                if (vehicle_type_map.find(str) == vehicle_type_map.end()) {
+                    vehicle_type_map[str] = vehicle_data.type_pool.size();
+                    vehicle_data.type_pool.push_back(str);
+                }
+            }
+            for (const auto& [str, idx] : local_contributing_factor_map) {
+                if (contributing_factor_map.find(str) == contributing_factor_map.end()) {
+                    contributing_factor_map[str] = vehicle_data.factor_pool.size();
+                    vehicle_data.factor_pool.push_back(str);
+                }
+            }
+        }
+    }
+    #endif
+
+    // Build indices using thread-local storage
+    #ifdef _OPENMP
+    const size_t num_threads = omp_get_max_threads();
+    std::vector<std::unordered_map<int, size_t>> thread_key_indices(num_threads);
+    std::vector<std::unordered_map<std::string, std::vector<size_t>>> thread_borough_indices(num_threads);
+    std::vector<std::unordered_map<std::string, std::vector<size_t>>> thread_zip_indices(num_threads);
+    std::vector<std::map<Date, std::vector<size_t>>> thread_date_indices(num_threads);
+    std::vector<std::map<int, std::vector<size_t>>> thread_injury_indices(num_threads);
+    std::vector<std::map<int, std::vector<size_t>>> thread_fatality_indices(num_threads);
+    std::vector<std::map<int, std::vector<size_t>>> thread_ped_fatality_indices(num_threads);
+    std::vector<std::map<int, std::vector<size_t>>> thread_cyclist_fatality_indices(num_threads);
+    std::vector<std::map<int, std::vector<size_t>>> thread_motorist_fatality_indices(num_threads);
+    std::vector<std::unordered_map<std::string, std::vector<size_t>>> thread_vehicle_type_indices(num_threads);
+
+    #pragma omp parallel
+    {
+        const int thread_id = omp_get_thread_num();
+        
+        #pragma omp for schedule(static, 10000)
+        for (size_t i = 0; i < lineCount; ++i) {
+            // Update key index
+            thread_key_indices[thread_id][unique_keys[i]] = i;
+            
+            // Update other indices
+            thread_borough_indices[thread_id][location_data.boroughs[i]].push_back(i);
+            thread_zip_indices[thread_id][location_data.zip_codes[i]].push_back(i);
+            thread_date_indices[thread_id][{time_data.dates[i], time_data.times[i]}].push_back(i);
+            
+            const int total_injuries = casualty_data.persons_injured[i] + 
+                                     casualty_data.pedestrians_injured[i] + 
+                                     casualty_data.cyclists_injured[i] + 
+                                     casualty_data.motorists_injured[i];
+            thread_injury_indices[thread_id][total_injuries].push_back(i);
+            
+            const int total_fatalities = casualty_data.persons_killed[i] + 
+                                       casualty_data.pedestrians_killed[i] + 
+                                       casualty_data.cyclists_killed[i] + 
+                                       casualty_data.motorists_killed[i];
+            thread_fatality_indices[thread_id][total_fatalities].push_back(i);
+            
+            thread_ped_fatality_indices[thread_id][casualty_data.pedestrians_killed[i]].push_back(i);
+            thread_cyclist_fatality_indices[thread_id][casualty_data.cyclists_killed[i]].push_back(i);
+            thread_motorist_fatality_indices[thread_id][casualty_data.motorists_killed[i]].push_back(i);
+            
+            for (size_t type_idx : vehicle_data.type_indices[i]) {
+                const std::string& type = vehicle_data.type_pool[type_idx];
+                thread_vehicle_type_indices[thread_id][type].push_back(i);
+            }
+        }
+    }
+
+    // Merge thread-local indices into global indices
+    for (const auto& thread_key_idx : thread_key_indices) {
+        key_to_index.insert(thread_key_idx.begin(), thread_key_idx.end());
+    }
+
+    auto mergeIndices = [](auto& global_index, const auto& thread_indices) {
+        for (const auto& thread_idx : thread_indices) {
+            for (const auto& [key, indices] : thread_idx) {
+                auto& global_vec = global_index[key];
+                global_vec.insert(global_vec.end(), indices.begin(), indices.end());
+            }
+        }
+    };
+
+    mergeIndices(borough_index, thread_borough_indices);
+    mergeIndices(zip_index, thread_zip_indices);
+    mergeIndices(date_index, thread_date_indices);
+    mergeIndices(injury_index, thread_injury_indices);
+    mergeIndices(fatality_index, thread_fatality_indices);
+    mergeIndices(pedestrian_fatality_index, thread_ped_fatality_indices);
+    mergeIndices(cyclist_fatality_index, thread_cyclist_fatality_indices);
+    mergeIndices(motorist_fatality_index, thread_motorist_fatality_indices);
+    mergeIndices(vehicle_type_index, thread_vehicle_type_indices);
+    #else
+    for (size_t i = 0; i < lineCount; ++i) {
+        key_to_index[unique_keys[i]] = i;
+        borough_index[location_data.boroughs[i]].push_back(i);
+        zip_index[location_data.zip_codes[i]].push_back(i);
+        date_index[{time_data.dates[i], time_data.times[i]}].push_back(i);
+        
+        injury_index[casualty_data.persons_injured[i] + casualty_data.pedestrians_injured[i] + 
+                    casualty_data.cyclists_injured[i] + casualty_data.motorists_injured[i]].push_back(i);
+        fatality_index[casualty_data.persons_killed[i] + casualty_data.pedestrians_killed[i] + 
+                      casualty_data.cyclists_killed[i] + casualty_data.motorists_killed[i]].push_back(i);
+        
+        pedestrian_fatality_index[casualty_data.pedestrians_killed[i]].push_back(i);
+        cyclist_fatality_index[casualty_data.cyclists_killed[i]].push_back(i);
+        motorist_fatality_index[casualty_data.motorists_killed[i]].push_back(i);
+        
+        for (size_t type_idx : vehicle_data.type_indices[i]) {
+            const std::string& type = vehicle_data.type_pool[type_idx];
+            vehicle_type_index[type].push_back(i);
+        }
     }
     #endif
     
     // Initialize spatial grid
     spatial_grid = createSpatialGrid();
     
-    // Populate spatial grid in parallel
+    // Populate spatial grid in parallel with thread-local buffers
     #ifdef _OPENMP
-    #pragma omp parallel for
-    #endif
-    for (size_t i = 0; i < latitudes.size(); ++i) {
-        for (auto& cell : spatial_grid) {
-            if (latitudes[i] >= cell.minLat && latitudes[i] <= cell.maxLat &&
-                longitudes[i] >= cell.minLon && longitudes[i] <= cell.maxLon) {
-                #ifdef _OPENMP
-                #pragma omp critical
-                #endif
-                cell.indices.push_back(i);
+    std::vector<std::vector<std::vector<size_t>>> thread_buffers(omp_get_max_threads(), 
+        std::vector<std::vector<size_t>>(spatial_grid.size()));
+
+    #pragma omp parallel
+    {
+        const int thread_id = omp_get_thread_num();
+        auto& local_buffers = thread_buffers[thread_id];
+        
+        // Pre-reserve space in local buffers
+        const size_t avg_size = location_data.latitudes.size() / (100 * omp_get_max_threads()); // 10x10 grid
+        for (auto& buffer : local_buffers) {
+            buffer.reserve(avg_size);
+        }
+        
+        #pragma omp for schedule(static, 10000)
+        for (size_t i = 0; i < location_data.latitudes.size(); ++i) {
+            for (size_t cell_idx = 0; cell_idx < spatial_grid.size(); ++cell_idx) {
+                const auto& cell = spatial_grid[cell_idx];
+                if (location_data.latitudes[i] >= cell.minLat && location_data.latitudes[i] <= cell.maxLat &&
+                    location_data.longitudes[i] >= cell.minLon && location_data.longitudes[i] <= cell.maxLon) {
+                    local_buffers[cell_idx].push_back(i);
+                    break;
+                }
+            }
+        }
+    }
+    
+    // Merge thread-local buffers into spatial grid
+    for (size_t cell_idx = 0; cell_idx < spatial_grid.size(); ++cell_idx) {
+        size_t total_size = 0;
+        for (const auto& thread_buffer : thread_buffers) {
+            total_size += thread_buffer[cell_idx].size();
+        }
+        
+        spatial_grid[cell_idx].indices.reserve(total_size);
+        for (const auto& thread_buffer : thread_buffers) {
+            spatial_grid[cell_idx].indices.insert(
+                spatial_grid[cell_idx].indices.end(),
+                thread_buffer[cell_idx].begin(),
+                thread_buffer[cell_idx].end()
+            );
+        }
+    }
+    #else
+    for (size_t i = 0; i < location_data.latitudes.size(); ++i) {
+        for (size_t cell_idx = 0; cell_idx < spatial_grid.size(); ++cell_idx) {
+            const auto& cell = spatial_grid[cell_idx];
+            if (location_data.latitudes[i] >= cell.minLat && location_data.latitudes[i] <= cell.maxLat &&
+                location_data.longitudes[i] >= cell.minLon && location_data.longitudes[i] <= cell.maxLon) {
+                spatial_grid[cell_idx].indices.push_back(i);
                 break;
             }
         }
     }
+    #endif
 }
 
 std::shared_ptr<Record> VectorizedDataSet::createRecord(size_t index) const {
     auto record = std::make_shared<Record>();
     
-    record->setUniqueKey(unique_keys[index]);
-    record->setBorough(boroughs[index]);
-    record->setZipCode(zip_codes[index]);
-    
-    GeoCoordinate loc{latitudes[index], longitudes[index]};
-    record->setLocation(loc);
-    
-    record->setOnStreet(on_streets[index]);
-    record->setCrossStreet(cross_streets[index]);
-    record->setOffStreet(off_streets[index]);
-    
-    Date dt{dates[index], times[index]};
-    record->setDateTime(dt);
-    
-    CasualtyStats stats;
-    stats.persons_injured = persons_injured[index];
-    stats.persons_killed = persons_killed[index];
-    stats.pedestrians_injured = pedestrians_injured[index];
-    stats.pedestrians_killed = pedestrians_killed[index];
-    stats.cyclists_injured = cyclists_injured[index];
-    stats.cyclists_killed = cyclists_killed[index];
-    stats.motorists_injured = motorists_injured[index];
-    stats.motorists_killed = motorists_killed[index];
-    record->setCasualtyStats(stats);
+    // Pre-allocate vectors to avoid reallocations
+    const auto& type_indices = vehicle_data.type_indices[index];
+    const auto& factor_indices = vehicle_data.factor_indices[index];
     
     VehicleInfo vehicleInfo;
-    for (size_t type_idx : vehicle_type_indices[index]) {
-        if (type_idx != static_cast<size_t>(-1)) {
-            vehicleInfo.vehicle_types.push_back(vehicle_type_pool[type_idx]);
-        }
+    vehicleInfo.vehicle_types.reserve(type_indices.size());
+    vehicleInfo.contributing_factors.reserve(factor_indices.size());
+    
+    // Set all fields at once to minimize function calls
+    record->setUniqueKey(unique_keys[index]);
+    record->setBorough(location_data.boroughs[index]);
+    record->setZipCode(location_data.zip_codes[index]);
+    record->setLocation({location_data.latitudes[index], location_data.longitudes[index]});
+    record->setOnStreet(location_data.on_streets[index]);
+    record->setCrossStreet(location_data.cross_streets[index]);
+    record->setOffStreet(location_data.off_streets[index]);
+    record->setDateTime({time_data.dates[index], time_data.times[index]});
+    
+    // Set casualty stats directly
+    record->setCasualtyStats({
+        casualty_data.persons_injured[index],
+        casualty_data.persons_killed[index],
+        casualty_data.pedestrians_injured[index],
+        casualty_data.pedestrians_killed[index],
+        casualty_data.cyclists_injured[index],
+        casualty_data.cyclists_killed[index],
+        casualty_data.motorists_injured[index],
+        casualty_data.motorists_killed[index]
+    });
+    
+    // Efficiently build vehicle info
+    for (size_t type_idx : type_indices) {
+        vehicleInfo.vehicle_types.push_back(vehicle_data.type_pool[type_idx]);
     }
-    for (size_t factor_idx : contributing_factor_indices[index]) {
-        if (factor_idx != static_cast<size_t>(-1)) {
-            vehicleInfo.contributing_factors.push_back(contributing_factor_pool[factor_idx]);
-        }
+    for (size_t factor_idx : factor_indices) {
+        vehicleInfo.contributing_factors.push_back(vehicle_data.factor_pool[factor_idx]);
     }
-    record->setVehicleInfo(vehicleInfo);
+    record->setVehicleInfo(std::move(vehicleInfo));
     
     return record;
 }
@@ -286,30 +426,26 @@ std::shared_ptr<Record> VectorizedDataSet::createRecord(size_t index) const {
 VectorizedDataSet::Records VectorizedDataSet::createRecordsFromIndices(
     const std::vector<size_t>& indices
 ) const {
-    Records result;
-    result.reserve(indices.size());
+    // Only parallelize for large result sets
+    if (indices.size() < 10000) {
+        Records result;
+        result.reserve(indices.size());
+        for (size_t idx : indices) {
+            result.push_back(createRecord(idx));
+        }
+        return result;
+    }
+
+    Records result(indices.size());
+    
+    const size_t CHUNK_SIZE = 10000;  // Increased chunk size
     
     #ifdef _OPENMP
-    #pragma omp parallel
-    {
-        Records local_results;
-        local_results.reserve(indices.size() / omp_get_num_threads());
-          std::cout << "no of threads active in createRecordsFromIndices - vectorized" << omp_get_num_threads() << " \n";
-
-
-        #pragma omp for schedule(dynamic)
-        for (size_t i = 0; i < indices.size(); ++i) {
-            local_results.push_back(createRecord(indices[i]));
-        }
-        
-        #pragma omp critical
-        result.insert(result.end(), local_results.begin(), local_results.end());
-    }
-    #else
-    for (size_t i = 0; i < indices.size(); ++i) {
-        result.push_back(createRecord(indices[i]));
-    }
+    #pragma omp parallel for schedule(static, CHUNK_SIZE)
     #endif
+    for (size_t i = 0; i < indices.size(); ++i) {
+        result[i] = createRecord(indices[i]);
+    }
     
     return result;
 }
@@ -318,40 +454,78 @@ VectorizedDataSet::Records VectorizedDataSet::queryByGeoBounds(
     float minLat, float maxLat,
     float minLon, float maxLon
 ) const {
-    std::vector<size_t> result_indices;
+    // First pass: count matching points to pre-allocate
+    size_t total_points = 0;
+    std::vector<size_t> matching_cells;
+    matching_cells.reserve(spatial_grid.size());
     
-    #ifdef _OPENMP
-    #pragma omp parallel
-    {
-        std::vector<size_t> local_indices;
-        
-        #pragma omp for schedule(dynamic)
-        for (size_t cell_idx = 0; cell_idx < spatial_grid.size(); ++cell_idx) {
-            const auto& cell = spatial_grid[cell_idx];
-            if (cell.maxLat >= minLat && cell.minLat <= maxLat &&
-                cell.maxLon >= minLon && cell.minLon <= maxLon) {
-                for (size_t idx : cell.indices) {
-                    if (latitudes[idx] >= minLat && latitudes[idx] <= maxLat &&
-                        longitudes[idx] >= minLon && longitudes[idx] <= maxLon) {
-                        local_indices.push_back(idx);
-                    }
-                }
-            }
-        }
-        
-        #pragma omp critical
-        result_indices.insert(result_indices.end(), local_indices.begin(), local_indices.end());
-    }
-    #else
     for (size_t cell_idx = 0; cell_idx < spatial_grid.size(); ++cell_idx) {
         const auto& cell = spatial_grid[cell_idx];
         if (cell.maxLat >= minLat && cell.minLat <= maxLat &&
             cell.maxLon >= minLon && cell.minLon <= maxLon) {
+            matching_cells.push_back(cell_idx);
+            total_points += cell.indices.size();
+        }
+    }
+    
+    // For small result sets, avoid parallelization overhead
+    if (total_points < 10000) {
+        std::vector<size_t> result_indices;
+        result_indices.reserve(total_points);
+        
+        for (size_t cell_idx : matching_cells) {
+            const auto& cell = spatial_grid[cell_idx];
             for (size_t idx : cell.indices) {
-                if (latitudes[idx] >= minLat && latitudes[idx] <= maxLat &&
-                    longitudes[idx] >= minLon && longitudes[idx] <= maxLon) {
+                if (location_data.latitudes[idx] >= minLat && location_data.latitudes[idx] <= maxLat &&
+                    location_data.longitudes[idx] >= minLon && location_data.longitudes[idx] <= maxLon) {
                     result_indices.push_back(idx);
                 }
+            }
+        }
+        return createRecordsFromIndices(result_indices);
+    }
+    
+    // For large result sets, use parallel processing
+    #ifdef _OPENMP
+    const size_t num_threads = omp_get_max_threads();
+    std::vector<std::vector<size_t>> thread_buffers(num_threads);
+    
+    #pragma omp parallel
+    {
+        const int thread_id = omp_get_thread_num();
+        auto& local_indices = thread_buffers[thread_id];
+        local_indices.reserve(total_points / num_threads);
+        
+        #pragma omp for schedule(static)
+        for (size_t i = 0; i < matching_cells.size(); ++i) {
+            const auto& cell = spatial_grid[matching_cells[i]];
+            for (size_t idx : cell.indices) {
+                if (location_data.latitudes[idx] >= minLat && location_data.latitudes[idx] <= maxLat &&
+                    location_data.longitudes[idx] >= minLon && location_data.longitudes[idx] <= maxLon) {
+                    local_indices.push_back(idx);
+                }
+            }
+        }
+    }
+    
+    // Merge results
+    std::vector<size_t> result_indices;
+    result_indices.reserve(total_points);
+    for (const auto& buffer : thread_buffers) {
+        result_indices.insert(result_indices.end(),
+                            buffer.begin(),
+                            buffer.end());
+    }
+    #else
+    std::vector<size_t> result_indices;
+    result_indices.reserve(total_points);
+    
+    for (size_t cell_idx : matching_cells) {
+        const auto& cell = spatial_grid[cell_idx];
+        for (size_t idx : cell.indices) {
+            if (location_data.latitudes[idx] >= minLat && location_data.latitudes[idx] <= maxLat &&
+                location_data.longitudes[idx] >= minLon && location_data.longitudes[idx] <= maxLon) {
+                result_indices.push_back(idx);
             }
         }
     }
@@ -374,37 +548,66 @@ VectorizedDataSet::Records VectorizedDataSet::queryByDateRange(
     const Date& start,
     const Date& end
 ) const {
-    std::vector<size_t> result_indices;
+    // For small ranges, avoid parallelization overhead
     auto startIt = date_index.lower_bound(start);
     auto endIt = date_index.upper_bound(end);
     
-    // Compute range size properly
-    size_t total_size = std::distance(startIt, endIt);
+    // Count number of elements in range
+    size_t range_size = 0;
+    for (auto it = startIt; it != endIt && range_size < 100; ++it) {
+        range_size += it->second.size();
+    }
+    
+    if (range_size < 100) {
+        std::vector<size_t> result_indices;
+        for (auto it = startIt; it != endIt; ++it) {
+            result_indices.insert(result_indices.end(),
+                                it->second.begin(),
+                                it->second.end());
+        }
+        return createRecordsFromIndices(result_indices);
+    }
+    
+    // For large ranges, use parallel processing
+    size_t total_indices = 0;
+    for (auto it = startIt; it != endIt; ++it) {
+        total_indices += it->second.size();
+    }
+    
+    std::vector<size_t> result_indices;
+    result_indices.reserve(total_indices);
+    
+    // First collect all indices
+    std::vector<std::pair<size_t, const std::vector<size_t>*>> all_indices;
+    all_indices.reserve(std::distance(startIt, endIt));
+    for (auto it = startIt; it != endIt; ++it) {
+        all_indices.emplace_back(0, &it->second);
+    }
     
     #ifdef _OPENMP
+    const size_t num_threads = omp_get_max_threads();
+    std::vector<std::vector<size_t>> thread_buffers(num_threads);
+    
     #pragma omp parallel
     {
-        std::vector<size_t> local_indices;
+        const int thread_id = omp_get_thread_num();
+        auto& local_indices = thread_buffers[thread_id];
+        local_indices.reserve(total_indices / num_threads);
         
-        // Corrected OpenMP syntax
-        #pragma omp for schedule(dynamic)
-        for (size_t i = 0; i < total_size; ++i) {
-            auto it = std::next(startIt, i);  // Safely advance iterator
-            local_indices.insert(local_indices.end(),
-                               it->second.begin(),
-                               it->second.end());
+        #pragma omp for schedule(static)
+        for (size_t i = 0; i < all_indices.size(); ++i) {
+            const auto& indices = *all_indices[i].second;
+            local_indices.insert(local_indices.end(), indices.begin(), indices.end());
         }
-        
-        #pragma omp critical
-        result_indices.insert(result_indices.end(),
-                            local_indices.begin(),
-                            local_indices.end());
+    }
+    
+    // Single-threaded merge of results
+    for (const auto& buffer : thread_buffers) {
+        result_indices.insert(result_indices.end(), buffer.begin(), buffer.end());
     }
     #else
-    for (auto it = startIt; it != endIt; ++it) {
-        result_indices.insert(result_indices.end(),
-                            it->second.begin(),
-                            it->second.end());
+    for (const auto& [_, indices] : all_indices) {
+        result_indices.insert(result_indices.end(), indices->begin(), indices->end());
     }
     #endif
     
@@ -422,121 +625,212 @@ VectorizedDataSet::Records VectorizedDataSet::queryByInjuryRange(
     int minInjuries,
     int maxInjuries
 ) const {
-    std::vector<size_t> result_indices;
+    // For small ranges, avoid parallelization overhead
     auto startIt = injury_index.lower_bound(minInjuries);
     auto endIt = injury_index.upper_bound(maxInjuries);
     
-    size_t total_size = std::distance(startIt, endIt);
-
-
-
+    // Count number of elements in range
+    size_t range_size = 0;
+    for (auto it = startIt; it != endIt && range_size < 100; ++it) {
+        range_size += it->second.size();
+    }
     
-    #ifdef _OPENMP
-    #pragma omp parallel
-    {
-        std::vector<size_t> local_indices;
-        
-        #pragma omp for schedule(dynamic)
-        for (size_t i = 0; i < total_size; ++i) {
-            auto it = std::next(startIt, i);
-            local_indices.insert(local_indices.end(),
-                               it->second.begin(),
-                               it->second.end());
+    if (range_size < 100) {
+        std::vector<size_t> result_indices;
+        for (auto it = startIt; it != endIt; ++it) {
+            result_indices.insert(result_indices.end(),
+                                it->second.begin(),
+                                it->second.end());
         }
-        
-        #pragma omp critical
-        result_indices.insert(result_indices.end(),
-                            local_indices.begin(),
-                            local_indices.end());
+        return createRecordsFromIndices(result_indices);
     }
-    #else
-    for (auto it = startIt; it != endIt; ++it) {
-        result_indices.insert(result_indices.end(),
-                            it->second.begin(),
-                            it->second.end());
-    }
-    #endif
     
-    return createRecordsFromIndices(result_indices);
-}
-
-VectorizedDataSet::Records VectorizedDataSet::queryByFatalityRange(
-    int minFatalities,
-    int maxFatalities
-) const {
+    // For large ranges, use parallel processing
+    size_t total_indices = 0;
+    for (auto it = startIt; it != endIt; ++it) {
+        total_indices += it->second.size();
+    }
+    
     std::vector<size_t> result_indices;
-    auto startIt = fatality_index.lower_bound(minFatalities);
-    auto endIt = fatality_index.upper_bound(maxFatalities);
+    result_indices.reserve(total_indices);
     
-    size_t total_size = std::distance(startIt, endIt);
+    // First collect all indices
+    std::vector<std::pair<size_t, const std::vector<size_t>*>> all_indices;
+    all_indices.reserve(std::distance(startIt, endIt));
+    for (auto it = startIt; it != endIt; ++it) {
+        all_indices.emplace_back(0, &it->second);
+    }
     
     #ifdef _OPENMP
+    const size_t num_threads = omp_get_max_threads();
+    std::vector<std::vector<size_t>> thread_buffers(num_threads);
+    
     #pragma omp parallel
     {
-        std::vector<size_t> local_indices;
+        const int thread_id = omp_get_thread_num();
+        auto& local_indices = thread_buffers[thread_id];
+        local_indices.reserve(total_indices / num_threads);
         
-        #pragma omp for schedule(dynamic)
-        for (size_t i = 0; i < total_size; ++i) {
-            auto it = std::next(startIt, i);
-            local_indices.insert(local_indices.end(),
-                               it->second.begin(),
-                               it->second.end());
+        #pragma omp for schedule(static)
+        for (size_t i = 0; i < all_indices.size(); ++i) {
+            const auto& indices = *all_indices[i].second;
+            local_indices.insert(local_indices.end(), indices.begin(), indices.end());
         }
-        
-        #pragma omp critical
-        result_indices.insert(result_indices.end(),
-                            local_indices.begin(),
-                            local_indices.end());
+    }
+    
+    // Single-threaded merge of results
+    for (const auto& buffer : thread_buffers) {
+        result_indices.insert(result_indices.end(), buffer.begin(), buffer.end());
     }
     #else
-    for (auto it = startIt; it != endIt; ++it) {
-        result_indices.insert(result_indices.end(),
-                            it->second.begin(),
-                            it->second.end());
+    for (const auto& [_, indices] : all_indices) {
+        result_indices.insert(result_indices.end(), indices->begin(), indices->end());
     }
     #endif
     
     return createRecordsFromIndices(result_indices);
 }
+
 
 VectorizedDataSet::RecordPtr VectorizedDataSet::queryByUniqueKey(int key) const {
     auto it = key_to_index.find(key);
     return it != key_to_index.end() ? createRecord(it->second) : nullptr;
 }
 
+VectorizedDataSet::Records VectorizedDataSet::queryByFatalityRange(
+    int minFatalities,
+    int maxFatalities
+) const {
+    // For small ranges, avoid parallelization overhead
+    auto startIt = fatality_index.lower_bound(minFatalities);
+    auto endIt = fatality_index.upper_bound(maxFatalities);
+    
+    // Count number of elements in range
+    size_t range_size = 0;
+    for (auto it = startIt; it != endIt && range_size < 100; ++it) {
+        range_size += it->second.size();
+    }
+    
+    if (range_size < 100) {
+        std::vector<size_t> result_indices;
+        for (auto it = startIt; it != endIt; ++it) {
+            result_indices.insert(result_indices.end(),
+                                it->second.begin(),
+                                it->second.end());
+        }
+        return createRecordsFromIndices(result_indices);
+    }
+    
+    // For large ranges, use parallel processing
+    size_t total_indices = 0;
+    for (auto it = startIt; it != endIt; ++it) {
+        total_indices += it->second.size();
+    }
+    
+    std::vector<size_t> result_indices;
+    result_indices.reserve(total_indices);
+    
+    // First collect all indices
+    std::vector<std::pair<size_t, const std::vector<size_t>*>> all_indices;
+    all_indices.reserve(std::distance(startIt, endIt));
+    for (auto it = startIt; it != endIt; ++it) {
+        all_indices.emplace_back(0, &it->second);
+    }
+    
+    #ifdef _OPENMP
+    const size_t num_threads = omp_get_max_threads();
+    std::vector<std::vector<size_t>> thread_buffers(num_threads);
+    
+    #pragma omp parallel
+    {
+        const int thread_id = omp_get_thread_num();
+        auto& local_indices = thread_buffers[thread_id];
+        local_indices.reserve(total_indices / num_threads);
+        
+        #pragma omp for schedule(static)
+        for (size_t i = 0; i < all_indices.size(); ++i) {
+            const auto& indices = *all_indices[i].second;
+            local_indices.insert(local_indices.end(), indices.begin(), indices.end());
+        }
+    }
+    
+    // Single-threaded merge of results
+    for (const auto& buffer : thread_buffers) {
+        result_indices.insert(result_indices.end(), buffer.begin(), buffer.end());
+    }
+    #else
+    for (const auto& [_, indices] : all_indices) {
+        result_indices.insert(result_indices.end(), indices->begin(), indices->end());
+    }
+    #endif
+    
+    return createRecordsFromIndices(result_indices);
+}
+
 VectorizedDataSet::Records VectorizedDataSet::queryByPedestrianFatalities(
     int minFatalities,
     int maxFatalities
 ) const {
-    std::vector<size_t> result_indices;
+    // For small ranges, avoid parallelization overhead
     auto startIt = pedestrian_fatality_index.lower_bound(minFatalities);
     auto endIt = pedestrian_fatality_index.upper_bound(maxFatalities);
     
-    size_t total_size = std::distance(startIt, endIt);
+    // Count number of elements in range
+    size_t range_size = 0;
+    for (auto it = startIt; it != endIt && range_size < 100; ++it) {
+        range_size += it->second.size();
+    }
+    
+    if (range_size < 100) {
+        std::vector<size_t> result_indices;
+        for (auto it = startIt; it != endIt; ++it) {
+            result_indices.insert(result_indices.end(),
+                                it->second.begin(),
+                                it->second.end());
+        }
+        return createRecordsFromIndices(result_indices);
+    }
+    
+    // For large ranges, use parallel processing
+    size_t total_indices = 0;
+    for (auto it = startIt; it != endIt; ++it) {
+        total_indices += it->second.size();
+    }
+    
+    std::vector<size_t> result_indices;
+    result_indices.reserve(total_indices);
+    
+    // First collect all indices
+    std::vector<std::pair<size_t, const std::vector<size_t>*>> all_indices;
+    all_indices.reserve(std::distance(startIt, endIt));
+    for (auto it = startIt; it != endIt; ++it) {
+        all_indices.emplace_back(0, &it->second);
+    }
     
     #ifdef _OPENMP
+    const size_t num_threads = omp_get_max_threads();
+    std::vector<std::vector<size_t>> thread_buffers(num_threads);
+    
     #pragma omp parallel
     {
-        std::vector<size_t> local_indices;
+        const int thread_id = omp_get_thread_num();
+        auto& local_indices = thread_buffers[thread_id];
+        local_indices.reserve(total_indices / num_threads);
         
-        #pragma omp for schedule(dynamic)
-        for (size_t i = 0; i < total_size; ++i) {
-            auto it = std::next(startIt, i);
-            local_indices.insert(local_indices.end(),
-                               it->second.begin(),
-                               it->second.end());
+        #pragma omp for schedule(static)
+        for (size_t i = 0; i < all_indices.size(); ++i) {
+            const auto& indices = *all_indices[i].second;
+            local_indices.insert(local_indices.end(), indices.begin(), indices.end());
         }
-        
-        #pragma omp critical
-        result_indices.insert(result_indices.end(),
-                            local_indices.begin(),
-                            local_indices.end());
+    }
+    
+    // Single-threaded merge of results
+    for (const auto& buffer : thread_buffers) {
+        result_indices.insert(result_indices.end(), buffer.begin(), buffer.end());
     }
     #else
-    for (auto it = startIt; it != endIt; ++it) {
-        result_indices.insert(result_indices.end(),
-                            it->second.begin(),
-                            it->second.end());
+    for (const auto& [_, indices] : all_indices) {
+        result_indices.insert(result_indices.end(), indices->begin(), indices->end());
     }
     #endif
     
@@ -547,35 +841,66 @@ VectorizedDataSet::Records VectorizedDataSet::queryByCyclistFatalities(
     int minFatalities,
     int maxFatalities
 ) const {
-    std::vector<size_t> result_indices;
+    // For small ranges, avoid parallelization overhead
     auto startIt = cyclist_fatality_index.lower_bound(minFatalities);
     auto endIt = cyclist_fatality_index.upper_bound(maxFatalities);
     
-    size_t total_size = std::distance(startIt, endIt);
+    // Count number of elements in range
+    size_t range_size = 0;
+    for (auto it = startIt; it != endIt && range_size < 100; ++it) {
+        range_size += it->second.size();
+    }
+    
+    if (range_size < 100) {
+        std::vector<size_t> result_indices;
+        for (auto it = startIt; it != endIt; ++it) {
+            result_indices.insert(result_indices.end(),
+                                it->second.begin(),
+                                it->second.end());
+        }
+        return createRecordsFromIndices(result_indices);
+    }
+    
+    // For large ranges, use parallel processing
+    size_t total_indices = 0;
+    for (auto it = startIt; it != endIt; ++it) {
+        total_indices += it->second.size();
+    }
+    
+    std::vector<size_t> result_indices;
+    result_indices.reserve(total_indices);
+    
+    // First collect all indices
+    std::vector<std::pair<size_t, const std::vector<size_t>*>> all_indices;
+    all_indices.reserve(std::distance(startIt, endIt));
+    for (auto it = startIt; it != endIt; ++it) {
+        all_indices.emplace_back(0, &it->second);
+    }
     
     #ifdef _OPENMP
+    const size_t num_threads = omp_get_max_threads();
+    std::vector<std::vector<size_t>> thread_buffers(num_threads);
+    
     #pragma omp parallel
     {
-        std::vector<size_t> local_indices;
+        const int thread_id = omp_get_thread_num();
+        auto& local_indices = thread_buffers[thread_id];
+        local_indices.reserve(total_indices / num_threads);
         
-        #pragma omp for schedule(dynamic)
-        for (size_t i = 0; i < total_size; ++i) {
-            auto it = std::next(startIt, i);
-            local_indices.insert(local_indices.end(),
-                               it->second.begin(),
-                               it->second.end());
+        #pragma omp for schedule(static)
+        for (size_t i = 0; i < all_indices.size(); ++i) {
+            const auto& indices = *all_indices[i].second;
+            local_indices.insert(local_indices.end(), indices.begin(), indices.end());
         }
-        
-        #pragma omp critical
-        result_indices.insert(result_indices.end(),
-                            local_indices.begin(),
-                            local_indices.end());
+    }
+    
+    // Single-threaded merge of results
+    for (const auto& buffer : thread_buffers) {
+        result_indices.insert(result_indices.end(), buffer.begin(), buffer.end());
     }
     #else
-    for (auto it = startIt; it != endIt; ++it) {
-        result_indices.insert(result_indices.end(),
-                            it->second.begin(),
-                            it->second.end());
+    for (const auto& [_, indices] : all_indices) {
+        result_indices.insert(result_indices.end(), indices->begin(), indices->end());
     }
     #endif
     
@@ -586,35 +911,66 @@ VectorizedDataSet::Records VectorizedDataSet::queryByMotoristFatalities(
     int minFatalities,
     int maxFatalities
 ) const {
-    std::vector<size_t> result_indices;
+    // For small ranges, avoid parallelization overhead
     auto startIt = motorist_fatality_index.lower_bound(minFatalities);
     auto endIt = motorist_fatality_index.upper_bound(maxFatalities);
     
-    size_t total_size = std::distance(startIt, endIt);
+    // Count number of elements in range
+    size_t range_size = 0;
+    for (auto it = startIt; it != endIt && range_size < 100; ++it) {
+        range_size += it->second.size();
+    }
+    
+    if (range_size < 100) {
+        std::vector<size_t> result_indices;
+        for (auto it = startIt; it != endIt; ++it) {
+            result_indices.insert(result_indices.end(),
+                                it->second.begin(),
+                                it->second.end());
+        }
+        return createRecordsFromIndices(result_indices);
+    }
+    
+    // For large ranges, use parallel processing
+    size_t total_indices = 0;
+    for (auto it = startIt; it != endIt; ++it) {
+        total_indices += it->second.size();
+    }
+    
+    std::vector<size_t> result_indices;
+    result_indices.reserve(total_indices);
+    
+    // First collect all indices
+    std::vector<std::pair<size_t, const std::vector<size_t>*>> all_indices;
+    all_indices.reserve(std::distance(startIt, endIt));
+    for (auto it = startIt; it != endIt; ++it) {
+        all_indices.emplace_back(0, &it->second);
+    }
     
     #ifdef _OPENMP
+    const size_t num_threads = omp_get_max_threads();
+    std::vector<std::vector<size_t>> thread_buffers(num_threads);
+    
     #pragma omp parallel
     {
-        std::vector<size_t> local_indices;
+        const int thread_id = omp_get_thread_num();
+        auto& local_indices = thread_buffers[thread_id];
+        local_indices.reserve(total_indices / num_threads);
         
-        #pragma omp for schedule(dynamic)
-        for (size_t i = 0; i < total_size; ++i) {
-            auto it = std::next(startIt, i);
-            local_indices.insert(local_indices.end(),
-                               it->second.begin(),
-                               it->second.end());
+        #pragma omp for schedule(static)
+        for (size_t i = 0; i < all_indices.size(); ++i) {
+            const auto& indices = *all_indices[i].second;
+            local_indices.insert(local_indices.end(), indices.begin(), indices.end());
         }
-        
-        #pragma omp critical
-        result_indices.insert(result_indices.end(),
-                            local_indices.begin(),
-                            local_indices.end());
+    }
+    
+    // Single-threaded merge of results
+    for (const auto& buffer : thread_buffers) {
+        result_indices.insert(result_indices.end(), buffer.begin(), buffer.end());
     }
     #else
-    for (auto it = startIt; it != endIt; ++it) {
-        result_indices.insert(result_indices.end(),
-                            it->second.begin(),
-                            it->second.end());
+    for (const auto& [_, indices] : all_indices) {
+        result_indices.insert(result_indices.end(), indices->begin(), indices->end());
     }
     #endif
     
