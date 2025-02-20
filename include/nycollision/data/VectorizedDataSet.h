@@ -1,119 +1,149 @@
 #pragma once
-#include "../core/Types.h"
-#include "../core/Record.h"
-#include "IDataSet.h"
-#include "../parser/IParser.h"
+
 #include <vector>
 #include <string>
 #include <memory>
+#include <algorithm>
 #include <unordered_map>
 #include <map>
+#include <chrono>
+#include <iostream>
+#include <omp.h>
+
+#include "nycollision/core/IRecord.h"
+#include "nycollision/core/Record.h"
+#include "nycollision/core/Config.h"
+#include "nycollision/data/IDataSet.h"
 
 namespace nycollision {
+namespace data {
 
-/**
- * @brief Optimized dataset using Object-of-Arrays (SoA) pattern for better cache locality
- * 
- * This implementation uses parallel arrays for better memory locality and SIMD optimization potential.
- * String data is pooled to reduce memory fragmentation and improve cache utilization.
- */
 class VectorizedDataSet : public IDataSet {
 public:
-    using Records = std::vector<std::shared_ptr<const IRecord>>;
-    using RecordPtr = std::shared_ptr<const IRecord>;
+    VectorizedDataSet(size_t initialCapacity = 2'700'000) {
+        reserve(initialCapacity);
+        nycollision::config::initializeOpenMP();
+    }
 
-    // Spatial index cell structure
-    struct GridCell {
-        float minLat, maxLat;
-        float minLon, maxLon;
-        std::vector<size_t> indices;
-    };
+    void reserve(size_t newCapacity) {
+        #pragma omp parallel sections
+        {
+            #pragma omp section
+            names_.reserve(newCapacity);
+            #pragma omp section
+            emails_.reserve(newCapacity);
+            #pragma omp section
+            levels_.reserve(newCapacity);
+            #pragma omp section
+            ranks_.reserve(newCapacity);
+            #pragma omp section
+            keys_.reserve(newCapacity);
+            #pragma omp section
+            boroughs_.reserve(newCapacity);
+            #pragma omp section
+            zipCodes_.reserve(newCapacity);
+        }
+    }
 
-    /**
-     * @brief Constructor that initializes OpenMP settings
-     */
-    VectorizedDataSet();
+    void loadFromFile(const std::string& filename, const IParser& parser) override {
+        auto startTime = std::chrono::high_resolution_clock::now();
 
-    /**
-     * @brief Load records from a file using the specified parser
-     */
-    void loadFromFile(const std::string& filename, const IParser& parser);
+        std::ifstream file(filename);
+        if (!file) {
+            throw std::runtime_error("Failed to open file: " + filename);
+        }
 
-    // IDataSet interface implementation
-    Records queryByGeoBounds(float minLat, float maxLat, float minLon, float maxLon) const override;
-    Records queryByBorough(const std::string& borough) const override;
-    Records queryByZipCode(const std::string& zipCode) const override;
-    Records queryByDateRange(const Date& start, const Date& end) const override;
-    Records queryByVehicleType(const std::string& vehicleType) const override;
-    Records queryByInjuryRange(int minInjuries, int maxInjuries) const override;
-    Records queryByFatalityRange(int minFatalities, int maxFatalities) const override;
-    RecordPtr queryByUniqueKey(int key) const override;
-    Records queryByPedestrianFatalities(int minFatalities, int maxFatalities) const override;
-    Records queryByCyclistFatalities(int minFatalities, int maxFatalities) const override;
-    Records queryByMotoristFatalities(int minFatalities, int maxFatalities) const override;
-    
-    size_t size() const override { return unique_keys.size(); }
+        std::string line;
+        // Skip header
+        std::getline(file, line);
+
+        std::vector<std::string> lines;
+        lines.reserve(2'700'000);
+        while (std::getline(file, line)) {
+            lines.push_back(std::move(line));
+        }
+
+        std::vector<std::shared_ptr<Record>> parsedRecords(lines.size());
+
+        #pragma omp parallel for
+        for (std::size_t i = 0; i < lines.size(); ++i) {
+            parsedRecords[i] = parser.parseRecord(lines[i]);
+        }
+
+        // Sequentially add to maintain thread safety
+        for (auto& rec : parsedRecords) {
+            if (rec) {
+                addRecord(rec);
+            }
+        }
+
+        auto endTime = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> elapsedSeconds = endTime - startTime;
+        std::cout << "VectorizedDataSet loadFromFile took " << elapsedSeconds.count() << " seconds.\n";
+    }
+
+    void addRecord(std::shared_ptr<Record> record) {
+        names_.push_back(record->name);
+        emails_.push_back(record->email);
+        levels_.push_back(record->level);
+        ranks_.push_back(record->rank);
+        keys_.push_back(record->key);
+        boroughs_.push_back(record->borough);
+        zipCodes_.push_back(record->zipCode);
+
+        // Update indices
+        keyIndex_[record->key] = record;
+        boroughIndex_[record->borough].push_back(record);
+        zipIndex_[record->zipCode].push_back(record);
+    }
+
+    // Query methods with parallel processing
+    Records queryByBorough(const std::string& borough) const override {
+        auto it = boroughIndex_.find(borough);
+        return it != boroughIndex_.end() ? convertToInterfaceRecords(it->second) : Records();
+    }
+
+    Records queryByZipCode(const std::string& zipCode) const override {
+        auto it = zipIndex_.find(zipCode);
+        return it != zipIndex_.end() ? convertToInterfaceRecords(it->second) : Records();
+    }
+
+    RecordPtr queryByUniqueKey(int key) const override {
+        auto it = keyIndex_.find(key);
+        return it != keyIndex_.end() ? std::static_pointer_cast<const IRecord>(it->second) : nullptr;
+    }
+
+    size_t size() const override { 
+        return names_.size(); 
+    }
 
 private:
-    // Helper to create a Record object from vectorized data at given index
-    std::shared_ptr<Record> createRecord(size_t index) const;
-    
-    // Helper to convert indices to Records
-    Records createRecordsFromIndices(const std::vector<size_t>& indices) const;
+    // Contiguous storage for better cache performance
+    std::vector<std::string> names_;
+    std::vector<std::string> emails_;
+    std::vector<int> levels_;
+    std::vector<float> ranks_;
+    std::vector<int> keys_;
+    std::vector<std::string> boroughs_;
+    std::vector<std::string> zipCodes_;
 
-    // Helper to add a string to a pool and return its index
-    size_t addToStringPool(const std::string& str, std::vector<std::string>& pool);
-
-    // Vectorized storage (SoA pattern)
-    std::vector<int> unique_keys;
-    
-    // Location data
-    std::vector<std::string> boroughs;
-    std::vector<std::string> zip_codes;
-    std::vector<float> latitudes;
-    std::vector<float> longitudes;
-    std::vector<std::string> on_streets;
-    std::vector<std::string> cross_streets;
-    std::vector<std::string> off_streets;
-    
-    // Date/Time data
-    std::vector<std::string> dates;
-    std::vector<std::string> times;
-    
-    // Casualty data (aligned for potential SIMD operations)
-    alignas(32) std::vector<int> persons_injured;
-    alignas(32) std::vector<int> persons_killed;
-    alignas(32) std::vector<int> pedestrians_injured;
-    alignas(32) std::vector<int> pedestrians_killed;
-    alignas(32) std::vector<int> cyclists_injured;
-    alignas(32) std::vector<int> cyclists_killed;
-    alignas(32) std::vector<int> motorists_injured;
-    alignas(32) std::vector<int> motorists_killed;
-    
-    // Vehicle data (using indices into string pools for memory efficiency)
-    std::vector<std::vector<size_t>> vehicle_type_indices;
-    std::vector<std::vector<size_t>> contributing_factor_indices;
-    std::vector<std::string> vehicle_type_pool;
-    std::vector<std::string> contributing_factor_pool;
-    
     // Indices for efficient querying
-    std::unordered_map<int, size_t> key_to_index;
-    std::unordered_map<std::string, std::vector<size_t>> borough_index;
-    std::unordered_map<std::string, std::vector<size_t>> zip_index;
-    std::map<Date, std::vector<size_t>> date_index;
-    
-    // Spatial index using grid-based approach
-    std::vector<GridCell> spatial_grid;
-    
-    // Range indices
-    std::map<int, std::vector<size_t>> injury_index;
-    std::map<int, std::vector<size_t>> fatality_index;
-    std::map<int, std::vector<size_t>> pedestrian_fatality_index;
-    std::map<int, std::vector<size_t>> cyclist_fatality_index;
-    std::map<int, std::vector<size_t>> motorist_fatality_index;
-    
-    // Vehicle type index
-    std::unordered_map<std::string, std::vector<size_t>> vehicle_type_index;
+    std::unordered_map<int, std::shared_ptr<Record>> keyIndex_;
+    std::unordered_map<std::string, std::vector<std::shared_ptr<Record>>> boroughIndex_;
+    std::unordered_map<std::string, std::vector<std::shared_ptr<Record>>> zipIndex_;
+
+    // Helper to convert internal records to interface records
+    Records convertToInterfaceRecords(const std::vector<std::shared_ptr<Record>>& records) const {
+        Records result(records.size());
+
+        #pragma omp parallel for
+        for (std::size_t i = 0; i < records.size(); ++i) {
+            result[i] = std::static_pointer_cast<const IRecord>(records[i]);
+        }
+
+        return result;
+    }
 };
 
+} // namespace data
 } // namespace nycollision
