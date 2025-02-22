@@ -103,6 +103,7 @@ void VectorizedDataSet::loadFromFile(const std::string& filename, const IParser&
     
     // Pre-allocate vectors
     unique_keys.reserve(lineCount);
+    boroughs.reserve(lineCount);
     zip_codes.reserve(lineCount);
     latitudes.reserve(lineCount);
     longitudes.reserve(lineCount);
@@ -157,6 +158,7 @@ void VectorizedDataSet::loadFromFile(const std::string& filename, const IParser&
                     index = unique_keys.size();
                     // Add to vectorized storage
                     unique_keys.push_back(record->getUniqueKey());
+                    boroughs.push_back(record->getBorough());
                     zip_codes.push_back(record->getZipCode());
                     auto loc = record->getLocation();
                     latitudes.push_back(loc.latitude);
@@ -249,6 +251,7 @@ std::shared_ptr<Record> VectorizedDataSet::createRecord(size_t index) const {
     auto record = std::make_shared<Record>();
     
     record->setUniqueKey(unique_keys[index]);
+    record->setBorough(boroughs[index]);
     record->setZipCode(zip_codes[index]);
     
     GeoCoordinate loc{latitudes[index], longitudes[index]};

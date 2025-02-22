@@ -101,7 +101,7 @@ QueryTimes runPerformanceTests(const nycollision::IDataSet& dataset) {
     
     // Borough queries
     times.borough = measureTime([&]() {
-        auto records = dataset.queryByBorough("MANHATTAN");
+        auto records = dataset.queryByBorough("BROOKLYN");
         std::cout << "Borough query found " << records.size() << " records\n";
     });
     
