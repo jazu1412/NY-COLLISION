@@ -5,6 +5,9 @@
 
 namespace nycollision {
 
+ 
+
+
 std::vector<std::string> CSVParser::tokenize(const std::string& line) const {
     std::vector<std::string> tokens;
     std::string token;

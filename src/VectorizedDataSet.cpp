@@ -458,44 +458,89 @@ VectorizedDataSet::Records VectorizedDataSet::queryByVehicleType(
 //     return createRecordsFromIndices(result_indices);
 // }
 // Query by scanning persons_injured
-VectorizedDataSet::Records
-VectorizedDataSet::queryByInjuryRange(int minInjuries, int maxInjuries) const
+
+
+
+// VectorizedDataSet::Records
+// VectorizedDataSet::queryByInjuryRange(int minInjuries, int maxInjuries) const
+// {
+//     // We'll gather indices first
+//     std::vector<size_t> resultIndices;
+//     resultIndices.reserve(persons_injured.size());
+//     const int* inj_ptr = persons_injured.data();
+
+// #ifdef _OPENMP
+// #pragma omp parallel
+//     {
+//         int count =0 ;
+//         std::vector<size_t> localIdx;
+//         localIdx.reserve(persons_injured.size() / omp_get_num_threads());
+
+//         #pragma omp for simd
+//         for (size_t i = 0; i < persons_injured.size(); ++i) {
+//             int val = persons_injured[i];
+//             if (val >= minInjuries && val <= maxInjuries) {
+//                 localIdx.push_back(i);
+//             }
+//         }
+
+//         #pragma omp critical
+//         {
+//             resultIndices.insert(resultIndices.end(), localIdx.begin(), localIdx.end());
+//         }
+//     }
+// #else
+//     for (size_t i = 0; i < persons_injured.size(); ++i) {
+//         int val = persons_injured[i];
+//         if (val >= minInjuries && val <= maxInjuries) {
+//             resultIndices.push_back(i);
+//         }
+//     }
+// #endif
+
+//     // Now convert indices -> Records
+//     return createRecordsFromIndices(resultIndices);
+// }
+
+
+VectorizedDataSet::Records VectorizedDataSet::queryByInjuryRange(int minInjuries, int maxInjuries) const
 {
-    // We'll gather indices first
-    std::vector<size_t> resultIndices;
-    resultIndices.reserve(persons_injured.size());
+    size_t n = persons_injured.size();
 
-#ifdef _OPENMP
-#pragma omp parallel
+    // Step 1: Compute a mask array (1 if condition is met, 0 otherwise)
+    std::vector<int> mask(n, 0);
+    #pragma omp simd
+    for (size_t i = 0; i < n; ++i) {
+        mask[i] = (persons_injured[i] >= minInjuries && persons_injured[i] <= maxInjuries) ? 1 : 0;
+    }
+
+    // Step 2: Compute an exclusive prefix sum on the mask.
+    // We'll implement our own exclusive scan inline.
+    std::vector<size_t> prefix(n, 0);
     {
-        std::vector<size_t> localIdx;
-        localIdx.reserve(persons_injured.size() / omp_get_num_threads());
-
-        #pragma omp for
-        for (size_t i = 0; i < persons_injured.size(); ++i) {
-            int val = persons_injured[i];
-            if (val >= minInjuries && val <= maxInjuries) {
-                localIdx.push_back(i);
-            }
-        }
-
-        #pragma omp critical
-        {
-            resultIndices.insert(resultIndices.end(), localIdx.begin(), localIdx.end());
+        size_t sum = 0;
+        for (size_t i = 0; i < n; ++i) {
+            prefix[i] = sum;
+            sum += mask[i];
         }
     }
-#else
-    for (size_t i = 0; i < persons_injured.size(); ++i) {
-        int val = persons_injured[i];
-        if (val >= minInjuries && val <= maxInjuries) {
-            resultIndices.push_back(i);
-        }
-    }
-#endif
+    
+    // Total number of matching elements.
+    size_t count = (n > 0 ? prefix[n - 1] + mask[n - 1] : 0);
+    std::vector<size_t> resultIndices(count);
 
-    // Now convert indices -> Records
+    // Step 3: Scatter the matching indices into the result array.
+    // For each index i, if mask[i] is 1, prefix[i] gives the output position.
+    #pragma omp simd
+    for (size_t i = 0; i < n; ++i) {
+        if (mask[i])
+            resultIndices[prefix[i]] = i;
+    }
+
     return createRecordsFromIndices(resultIndices);
 }
+
+
 
 
 VectorizedDataSet::Records VectorizedDataSet::queryByFatalityRange(
