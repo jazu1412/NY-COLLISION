@@ -68,6 +68,12 @@ public:
     virtual Records queryByMotoristFatalities(int minFatalities, int maxFatalities) const = 0;
 
     /**
+     * @brief Borough-based query
+     * @return Records from the specified borough
+     */
+    virtual Records queryByBorough(const std::string& borough) const = 0;
+
+    /**
      * @brief Returns total number of records in the dataset
      */
     virtual size_t size() const = 0;

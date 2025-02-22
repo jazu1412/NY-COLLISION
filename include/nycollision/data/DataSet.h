@@ -107,6 +107,7 @@ public:
     Records queryByPedestrianFatalities(int minFatalities, int maxFatalities) const override;
     Records queryByCyclistFatalities(int minFatalities, int maxFatalities) const override;
     Records queryByMotoristFatalities(int minFatalities, int maxFatalities) const override;
+    Records queryByBorough(const std::string& borough) const override;
     
     size_t size() const override { return records_.size(); }
 

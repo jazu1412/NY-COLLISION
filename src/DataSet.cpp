@@ -4,8 +4,6 @@
 namespace nycollision {
 
 namespace {
-     // If you want to fix the thread count:
-   
     // Initialize spatial grid with default coverage of NYC area
     std::vector<DataSet::GridCell> createSpatialGrid() {
         std::vector<DataSet::GridCell> grid;
@@ -160,6 +158,28 @@ DataSet::Records DataSet::queryByMotoristFatalities(int minFatalities, int maxFa
         }
     }
     std::cout << "calling from queryByMotoristFatalities" << " .\n";
+    return convertToInterfaceRecords(result);
+}
+
+DataSet::Records DataSet::queryByBorough(const std::string& borough) const {
+    std::vector<std::shared_ptr<Record>> result;
+    
+    #pragma omp parallel
+    {
+        std::vector<std::shared_ptr<Record>> local_matches;
+        
+        #pragma omp for nowait
+        for (size_t i = 0; i < records_.size(); ++i) {
+            if (records_[i]->getBorough() == borough) {
+                local_matches.push_back(records_[i]);
+            }
+        }
+        
+        #pragma omp critical
+        result.insert(result.end(), local_matches.begin(), local_matches.end());
+    }
+    
+    std::cout << "calling from queryByBorough" << " .\n";
     return convertToInterfaceRecords(result);
 }
 

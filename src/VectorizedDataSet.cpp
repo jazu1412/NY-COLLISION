@@ -16,6 +16,16 @@ VectorizedDataSet::VectorizedDataSet() {
   config::initializeOpenMP();
 }
 
+IDataSet::Records VectorizedDataSet::queryByBorough(const std::string& borough) const {
+    std::vector<size_t> matching_indices;
+    for (size_t i = 0; i < boroughs.size(); ++i) {
+        if (boroughs[i] == borough) {
+            matching_indices.push_back(i);
+        }
+    }
+    return createRecordsFromIndices(matching_indices);
+}
+
 namespace {
     // Initialize spatial grid with default coverage of NYC area
     std::vector<VectorizedDataSet::GridCell> createSpatialGrid() {

@@ -58,6 +58,7 @@ struct QueryTimes {
     double geoBounds;
     double injury;
     double vehicle;
+    double borough;
     double total;
 };
 
@@ -98,13 +99,20 @@ QueryTimes runPerformanceTests(const nycollision::IDataSet& dataset) {
         std::cout << "Vehicle type query found " << records.size() << " records\n";
     });
     
-    times.total =  times.injury + times.vehicle;
+    // Borough queries
+    times.borough = measureTime([&]() {
+        auto records = dataset.queryByBorough("MANHATTAN");
+        std::cout << "Borough query found " << records.size() << " records\n";
+    });
+    
+    times.total = times.injury + times.vehicle + times.borough;
     
     std::cout << "\nPerformance Results:\n"
             //   << "Date range query: " << times.dateRange << "ms\n"
             //   << "Geographic bounds query: " << times.geoBounds << "ms\n"
               << "Injury range query: " << times.injury << "ms\n"
               << "Vehicle type query: " << times.vehicle << "ms\n"
+              << "Borough query: " << times.borough << "ms\n"
               << "Total time: " << times.total << "ms\n\n";
               
     return times;
@@ -145,6 +153,8 @@ int main(int argc, char* argv[]) {
                   << ((originalTimes.injury - vectorizedTimes.injury) / originalTimes.injury * 100) << "%\n"
                   << "Vehicle type query: "
                   << ((originalTimes.vehicle - vectorizedTimes.vehicle) / originalTimes.vehicle * 100) << "%\n"
+                  << "Borough query: "
+                  << ((originalTimes.borough - vectorizedTimes.borough) / originalTimes.borough * 100) << "%\n"
                   << "Total improvement: "
                   << ((originalTimes.total - vectorizedTimes.total) / originalTimes.total * 100) << "%\n";
 
