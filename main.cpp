@@ -2,6 +2,10 @@
 #include <iostream>
 #include <iomanip>
 #include <map>
+#include <chrono>
+
+using Clock = std::chrono::high_resolution_clock;
+using Duration = std::chrono::duration<double>;
 
 // Helper function to print collision records
 void printCollisions(const std::vector<std::shared_ptr<const nycollision::IRecord>>& records, size_t limit = 3) {
@@ -91,6 +95,17 @@ void analyzeVehicleTypes(const std::vector<std::shared_ptr<const nycollision::IR
     std::cout << std::endl;
 }
 
+// Helper function to measure and print execution time
+template<typename Func>
+auto measureTime(const std::string& description, Func&& func) {
+    auto start = Clock::now();
+    auto result = func();
+    auto end = Clock::now();
+    Duration elapsed = end - start;
+    std::cout << description << " took " << elapsed.count() << " seconds\n";
+    return result;
+}
+
 int main(int argc, char* argv[]) {
     if (argc != 2) {
         std::cerr << "Usage: " << argv[0] << " <collision_data.csv>\n";
@@ -100,55 +115,110 @@ int main(int argc, char* argv[]) {
     try {
         // Create analyzer and load data
         nycollision::CollisionAnalyzer analyzer;
-        auto startTime = std::chrono::high_resolution_clock::now();
-       
+        auto startTime = Clock::now();
         analyzer.loadData(argv[1]);
-
-        auto endTime = std::chrono::high_resolution_clock::now();
-
-        std::chrono::duration<double> elapsedSeconds = endTime - startTime;
-        std::cout << "loadData took " << elapsedSeconds.count() << " seconds.\n";
-
-
-        std::cout << "Loaded " << analyzer.getTotalRecords() << " collision records\n\n";
+        auto endTime = Clock::now();
+        Duration loadTime = endTime - startTime;
+        std::cout << "Data loaded in " << loadTime.count() << " seconds.\n";
+        std::cout << "Total records: " << analyzer.getTotalRecords() << "\n\n";
 
         // Example 1: Find collisions in Brooklyn
-        std::cout << "=== Collisions in Brooklyn ===\n";
-        auto brooklynCollisions = analyzer.findCollisionsInBorough("BROOKLYN");
+        std::cout << "\n=== Collisions in Brooklyn ===\n";
+        auto brooklynCollisions = measureTime("Normal query", [&]() {
+            return analyzer.findCollisionsInBorough("BROOKLYN");
+        });
         printCollisions(brooklynCollisions);
         analyzeCasualties(brooklynCollisions);
 
         // Example 2: Find severe collisions
         std::cout << "\n=== Severe Collisions (5+ injuries) ===\n";
-        auto severeCollisions = analyzer.findCollisionsByInjuryCount(5, 999);
+        auto severeCollisions = measureTime("Normal query", [&]() {
+            return analyzer.findCollisionsByInjuryCount(5, 999);
+        });
         printCollisions(severeCollisions);
-       // analyzeVehicleTypes(severeCollisions);
+        analyzeVehicleTypes(severeCollisions);
 
         // Example 3: Find collisions in Lower Manhattan
         std::cout << "\n=== Collisions in Lower Manhattan ===\n";
-        auto areaCollisions = analyzer.findCollisionsInArea(
-            40.7000, 40.7200,  // latitude range
-            -74.0100, -73.9900 // longitude range
-        );
+        std::cout << "Normal Query:\n";
+        auto areaCollisions = measureTime("Normal query", [&]() {
+            return analyzer.findCollisionsInArea(
+                40.7000, 40.7200,  // latitude range
+                -74.0100, -73.9900 // longitude range
+            );
+        });
+        std::cout << "R-tree Query:\n";
+        auto areaCollisionsRTree = measureTime("R-tree query", [&]() {
+            return analyzer.getDataset().queryByGeoBoundsRTree(
+                40.7000, 40.7200,  // latitude range
+                -74.0100, -73.9900 // longitude range
+            );
+        });
+        
+        std::cout << "Normal query found: " << areaCollisions.size() << " records\n";
+        std::cout << "R-tree query found: " << areaCollisionsRTree.size() << " records\n";
         printCollisions(areaCollisions);
 
         // Example 4: Find taxi-involved collisions
         std::cout << "\n=== Taxi-involved Collisions ===\n";
-        auto taxiCollisions = analyzer.findCollisionsByVehicleType("TAXI");
+        auto taxiCollisions = measureTime("Normal query", [&]() {
+            return analyzer.findCollisionsByVehicleType("TAXI");
+        });
         printCollisions(taxiCollisions);
         analyzeCasualties(taxiCollisions);
 
         // Example 5: Find collisions by date range
         std::cout << "\n=== Collisions in January 2024 ===\n";
-        auto januaryCollisions = analyzer.findCollisionsInDateRange("2024-01-01", "2024-01-31");
+        auto januaryCollisions = measureTime("Normal query", [&]() {
+            return analyzer.findCollisionsInDateRange("2024-01-01", "2024-01-31");
+        });
         printCollisions(januaryCollisions);
-       // analyzeVehicleTypes(januaryCollisions);
+        analyzeVehicleTypes(januaryCollisions);
 
         // Example 6: Find collisions with cyclist fatalities
         std::cout << "\n=== Collisions with Cyclist Fatalities ===\n";
-        auto cyclistFatalities = analyzer.findCollisionsByFatalityCount(1, 999);
+        auto cyclistFatalities = measureTime("Normal query", [&]() {
+            return analyzer.findCollisionsByFatalityCount(1, 999);
+        });
         printCollisions(cyclistFatalities);
         analyzeCasualties(cyclistFatalities);
+
+        // Performance comparison for different area sizes
+        std::cout << "\n=== Spatial Query Performance Comparison ===\n";
+        struct TestCase {
+            std::string name;
+            float minLat, maxLat, minLon, maxLon;
+        };
+
+        std::vector<TestCase> testCases = {
+            {
+                "Small Area (Few Blocks)",
+                40.7100f, 40.7120f,  // ~0.2km
+                -73.9900f, -73.9880f
+            },
+            {
+                "Medium Area (Neighborhood)",
+                40.7000f, 40.7200f,  // ~2km
+                -74.0100f, -73.9900f
+            },
+            {
+                "Large Area (Borough)",
+                40.5000f, 40.9000f,  // ~40km
+                -74.1000f, -73.7000f
+            }
+        };
+
+        for (const auto& test : testCases) {
+            std::cout << "\nTesting " << test.name << ":\n";
+            auto stats = analyzer.getDataset().benchmarkQuery(
+                test.minLat, test.maxLat,
+                test.minLon, test.maxLon
+            );
+            std::cout << "Records found: " << stats.result_count << "\n"
+                      << "Brute Force: " << stats.bruteforce_time << " seconds\n"
+                      << "R-tree: " << stats.rtree_time << " seconds\n"
+                      << "Speedup: " << (stats.bruteforce_time / stats.rtree_time) << "x\n";
+        }
 
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;

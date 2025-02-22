@@ -1,130 +1,168 @@
 # NY Collision Data Analysis Library
 
-A C++ library for analyzing New York City collision data with an emphasis on object-oriented design, abstraction, and efficient querying.
+A C++ library for processing and analyzing New York collision data with emphasis on performance and object-oriented design principles.
+
+## Overview
+
+This library provides a robust framework for processing collision data through an object-oriented design approach. It features a serial processing implementation (Phase 1) and a parallel processing enhancement (Phase 2) using OpenMP.
 
 ## Features
 
-- Modern C++17 implementation
-- Clean object-oriented design with proper abstraction
-- Efficient data structures for various query types
-- Thread-safe immutable records
-- Flexible CSV parsing with quote handling
-- Comprehensive query capabilities:
-  - Geographic bounding box searches
-  - Borough and ZIP code filtering
-  - Date range queries
-  - Vehicle type searches
-  - Casualty statistics filtering
-  - Unique key lookups
+- Object-oriented design with emphasis on abstraction
+- CSV data parsing with type-safe field representation
+- Efficient data storage and retrieval mechanisms
+- Range-based search capabilities
+- Performance benchmarking infrastructure
+- Parallel processing support (Phase 2)
 
-## Architecture
+## Dependencies
 
-The library follows SOLID principles and implements several design patterns:
+- C++17 or higher
+- CMake 3.12 or higher
+- OpenMP (for Phase 2 parallel processing)
 
-- **Facade Pattern**: `CollisionAnalyzer` provides a simplified interface
-- **Strategy Pattern**: Flexible parsing through `IParser` interface
-- **Interface Segregation**: Clear separation of concerns with interfaces
-- **Dependency Injection**: Parser and dataset implementations are injectable
+## Building and Running the Project
 
-### Key Components
-
-- `IRecord`: Interface for collision records
-- `IDataSet`: Interface for querying collision data
-- `IParser`: Interface for data parsing
-- `DataSet`: Efficient implementation with multiple indices
-- `CSVParser`: CSV parsing with quote handling
-- `CollisionAnalyzer`: Facade for easy library usage
-
-## Building
+### Building
+To build the project from scratch:
 
 ```bash
-# Create build directory
-mkdir build && cd build
-
-# Configure
-cmake ..
-
-# Build
-cmake --build .
-
-# Install (optional)
-sudo cmake --install .
+rm -rf build && mkdir build && cd build && cmake .. && make
 ```
 
-## Usage Example
+### Running the Application
+To run the application with collision data:
+
+```bash
+./collision_example Motor_Vehicle_Collisions_-_Crashes_20250212.csv
+```
+
+## Project Structure
+
+```
+.
+├── CMakeLists.txt                      # Main CMake configuration
+├── cmake/
+│   └── nycollision-config.cmake.in     # CMake package configuration
+├── include/
+│   └── nycollision/
+│       ├── core/                       # Core data structures
+│       │   ├── IRecord.h              # Record interface
+│       │   ├── Record.h               # Concrete record implementation
+│       │   └── Types.h                # Type definitions
+│       ├── data/                      # Data management
+│       │   ├── DataSet.h             # Dataset container
+│       │   └── IDataSet.h            # Dataset interface
+│       ├── parser/                    # Data parsing
+│       │   ├── CSVParser.h           # CSV parser implementation
+│       │   └── IParser.h             # Parser interface
+│       └── util/                      # Utility functions
+│           └── CollisionAnalyzer.h    # Analysis tools
+└── src/                               # Implementation files
+    ├── CSVParser.cpp
+    └── DataSet.cpp
+```
+
+## API Documentation
+
+### Core Components
+
+#### IRecord Interface
+```cpp
+class IRecord {
+    // Abstract interface for collision records
+    virtual void setField(const std::string& field, const std::string& value) = 0;
+    virtual std::string getField(const std::string& field) const = 0;
+};
+```
+
+#### DataSet Interface
+```cpp
+class IDataSet {
+    // Interface for dataset operations
+    virtual void addRecord(std::unique_ptr<IRecord> record) = 0;
+    virtual const IRecord* getRecord(size_t index) const = 0;
+    virtual size_t size() const = 0;
+};
+```
+
+#### Parser Interface
+```cpp
+class IParser {
+    // Interface for data parsing
+    virtual std::unique_ptr<IDataSet> parse(const std::string& filename) = 0;
+};
+```
+
+### Usage Example
 
 ```cpp
-#include <nycollision/CollisionAnalyzer.h>
-#include <iostream>
+#include <nycollision/parser/CSVParser.h>
+#include <nycollision/util/CollisionAnalyzer.h>
 
 int main() {
-    nycollision::CollisionAnalyzer analyzer;
+    // Create parser instance
+    CSVParser parser;
     
-    // Load collision data
-    analyzer.loadData("collision_data.csv");
+    // Parse data file
+    auto dataset = parser.parse("collision_data.csv");
     
-    // Find collisions in Brooklyn
-    auto collisions = analyzer.findCollisionsInBorough("BROOKLYN");
+    // Create analyzer
+    CollisionAnalyzer analyzer(dataset.get());
     
-    // Print results
-    for (const auto& collision : collisions) {
-        std::cout << "Date: " << collision->getDateTime().date
-                  << " Location: " << collision->getBorough()
-                  << " Injuries: " << collision->getCasualtyStats().getTotalInjuries()
-                  << "\n";
-    }
+    // Perform analysis
+    auto results = analyzer.analyzeTimeRange("2020-01-01", "2020-12-31");
 }
 ```
 
-## Using as a Library
+## Performance Benchmarking
 
-To use this library in your CMake project:
+### Phase 1: Serial Processing
 
-```cmake
-find_package(nycollision REQUIRED)
-target_link_libraries(your_target PRIVATE nycollision::nycollision)
-```
+The initial implementation focuses on efficient serial processing with the following benchmarks:
 
-## Directory Structure
+1. Data Loading Performance
+   - CSV parsing speed
+   - Memory usage optimization
+   - Data structure initialization
 
-```
-nycollision/
-├── include/nycollision/    # Public headers
-│   ├── Types.h            # Common types and structures
-│   ├── IRecord.h          # Record interface
-│   ├── Record.h           # Record implementation
-│   ├── IDataSet.h         # Dataset interface
-│   ├── DataSet.h          # Dataset implementation
-│   ├── IParser.h          # Parser interface
-│   ├── CSVParser.h        # CSV parser implementation
-│   └── CollisionAnalyzer.h # Facade class
-├── src/                    # Implementation files
-│   ├── DataSet.cpp
-│   └── CSVParser.cpp
-├── examples/               # Example code
-├── tests/                  # Unit tests
-└── docs/                   # Documentation
-```
+2. Search Operations
+   - Range queries
+   - Field-specific searches
+   - Aggregate operations
 
-## Performance Considerations
+### Phase 2: Parallel Processing
 
-The library uses several optimization techniques:
+The parallel implementation using OpenMP demonstrates:
 
-- Multiple indices for O(1) or O(log n) query performance
-- Spatial indexing for geographic queries
-- Smart pointers for memory management
-- Const correctness for thread safety
-- Move semantics for efficient data handling
+1. Data Processing Speedup
+   - Multi-threaded parsing
+   - Concurrent search operations
+   - Load balancing strategies
 
-## Contributing
+2. Performance Comparison
+   - Thread scaling efficiency
+   - Memory usage impact
+   - Operation latency improvements
 
-Contributions are welcome! Please follow these steps:
+## Implementation Details
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
+### Phase 1: Serial Implementation
 
-## License
+The serial implementation emphasizes:
+- Clean object-oriented design
+- Efficient data structures
+- Type-safe field representation
+- Minimal memory overhead
+- Optimized search algorithms
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+Key design patterns used:
+- Factory Pattern: For record creation
+- Strategy Pattern: For parsing strategies
+- Facade Pattern: For simplified API access
+
+### Phase 2: Parallel Enhancement
+
+Parallel processing improvements include:
+- OpenMP parallel sections for data parsing
+
