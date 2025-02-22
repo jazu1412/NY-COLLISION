@@ -6,13 +6,18 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Find required packages
+find_package(OpenMP REQUIRED)
+find_package(Boost 1.71.0 REQUIRED)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+
 # Library source files
 set(LIB_SOURCES
     src/DataSet.cpp
     src/CSVParser.cpp
 )
 
-# Library headers by category
+# Library headers
 set(CORE_HEADERS
     include/nycollision/core/Types.h
     include/nycollision/core/IRecord.h
@@ -33,7 +38,6 @@ set(UTIL_HEADERS
     include/nycollision/util/CollisionAnalyzer.h
 )
 
-# Combine all headers
 set(LIB_HEADERS
     ${CORE_HEADERS}
     ${DATA_HEADERS}
@@ -41,7 +45,7 @@ set(LIB_HEADERS
     ${UTIL_HEADERS}
 )
 
-# Create library target
+# Create library
 add_library(nycollision ${LIB_SOURCES} ${LIB_HEADERS})
 target_include_directories(nycollision
     PUBLIC
@@ -49,59 +53,13 @@ target_include_directories(nycollision
         $<INSTALL_INTERFACE:include>
 )
 
-# Example executable
+# Link dependencies
+target_link_libraries(nycollision 
+    PUBLIC 
+        OpenMP::OpenMP_CXX
+        Boost::boost
+)
+
+# Create example executable
 add_executable(collision_example main.cpp)
-target_link_libraries(collision_example PRIVATE nycollision)
-
-# Installation rules
-include(GNUInstallDirs)
-install(TARGETS nycollision
-    EXPORT nycollision-targets
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-)
-
-install(DIRECTORY include/nycollision
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-    FILES_MATCHING PATTERN "*.h"
-)
-
-install(EXPORT nycollision-targets
-    FILE nycollision-targets.cmake
-    NAMESPACE nycollision::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/nycollision
-)
-
-# Generate and install package configuration
-include(CMakePackageConfigHelpers)
-write_basic_package_version_file(
-    "nycollision-config-version.cmake"
-    VERSION ${PROJECT_VERSION}
-    COMPATIBILITY SameMajorVersion
-)
-
-configure_package_config_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/nycollision-config.cmake.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/nycollision-config.cmake"
-    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/nycollision
-)
-
-install(FILES
-    "${CMAKE_CURRENT_BINARY_DIR}/nycollision-config.cmake"
-    "${CMAKE_CURRENT_BINARY_DIR}/nycollision-config-version.cmake"
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/nycollision
-)
-
-# Export targets from build tree
-export(EXPORT nycollision-targets
-    FILE "${CMAKE_CURRENT_BINARY_DIR}/nycollision-targets.cmake"
-    NAMESPACE nycollision::
-)
-
-# Create package configuration for build tree
-configure_file(cmake/nycollision-config.cmake.in
-    "${CMAKE_CURRENT_BINARY_DIR}/nycollision-config.cmake"
-    @ONLY
-)
+target_link_libraries(collision_example PRIVATE nycollision OpenMP::OpenMP_CXX)  # ✅ Add OpenMP

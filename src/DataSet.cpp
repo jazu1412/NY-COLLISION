@@ -3,61 +3,23 @@
 
 namespace nycollision {
 
-namespace {
-    // Initialize spatial grid with default coverage of NYC area
-    std::vector<DataSet::GridCell> createSpatialGrid() {
-        std::vector<DataSet::GridCell> grid;
-        
-        // NYC approximate bounds
-        const float MIN_LAT = 40.4774f;
-        const float MAX_LAT = 40.9176f;
-        const float MIN_LON = -74.2591f;
-        const float MAX_LON = -73.7004f;
-        
-        // Create a 10x10 grid
-        const int GRID_SIZE = 10;
-        const float LAT_STEP = (MAX_LAT - MIN_LAT) / GRID_SIZE;
-        const float LON_STEP = (MAX_LON - MIN_LON) / GRID_SIZE;
-        
-        for (int i = 0; i < GRID_SIZE; ++i) {
-            for (int j = 0; j < GRID_SIZE; ++j) {
-                DataSet::GridCell cell;
-                cell.minLat = MIN_LAT + (i * LAT_STEP);
-                cell.maxLat = MIN_LAT + ((i + 1) * LAT_STEP);
-                cell.minLon = MIN_LON + (j * LON_STEP);
-                cell.maxLon = MIN_LON + ((j + 1) * LON_STEP);
-                grid.push_back(cell);
-            }
-        }
-        
-        return grid;
-    }
-}
-
 void DataSet::addRecord(std::shared_ptr<Record> record) {
-    // Initialize spatial grid if not already done
-    if (spatialGrid_.empty()) {
-        spatialGrid_ = createSpatialGrid();
-    }
-
     // Add to primary storage
     records_.push_back(record);
     
-    // Update indices
+    // Update R-tree index with thread safety
+    {
+        std::unique_lock lock(spatial_mutex_);
+        auto loc = record->getLocation();
+        Point p(loc.latitude, loc.longitude);
+        rtree_.insert(std::make_pair(p, record));
+    }
+    
+    // Update other indices
     keyIndex_[record->getUniqueKey()] = record;
     boroughIndex_[record->getBorough()].push_back(record);
     zipIndex_[record->getZipCode()].push_back(record);
     dateIndex_[record->getDateTime()].push_back(record);
-    
-    // Update spatial index
-    auto loc = record->getLocation();
-    for (auto& cell : spatialGrid_) {
-        if (loc.latitude >= cell.minLat && loc.latitude <= cell.maxLat &&
-            loc.longitude >= cell.minLon && loc.longitude <= cell.maxLon) {
-            cell.records.push_back(record);
-            break;
-        }
-    }
     
     // Update range indices
     const auto& stats = record->getCasualtyStats();
@@ -74,38 +36,96 @@ void DataSet::addRecord(std::shared_ptr<Record> record) {
     }
 }
 
-DataSet::Records DataSet::queryByGeoBounds(
+DataSet::Records DataSet::queryByGeoBoundsBruteForce(
     float minLat, float maxLat,
     float minLon, float maxLon
 ) const {
     std::vector<std::shared_ptr<Record>> result;
-    for (const auto& cell : spatialGrid_) {
-        // Check if cell overlaps with query bounds
-        if (cell.maxLat >= minLat && cell.minLat <= maxLat &&
-            cell.maxLon >= minLon && cell.minLon <= maxLon) {
-            // Check individual records in overlapping cells
-            for (const auto& record : cell.records) {
-                auto loc = record->getLocation();
-                if (loc.latitude >= minLat && loc.latitude <= maxLat &&
-                    loc.longitude >= minLon && loc.longitude <= maxLon) {
-                    result.push_back(record);
-                }
-            }
+    
+    for (const auto& record : records_) {
+        auto loc = record->getLocation();
+        if (loc.latitude >= minLat && loc.latitude <= maxLat &&
+            loc.longitude >= minLon && loc.longitude <= maxLon) {
+            result.push_back(record);
         }
     }
-    std::cout << "calling from queryByGeoBounds" << " .\n";
+    
     return convertToInterfaceRecords(result);
+}
+
+DataSet::Records DataSet::queryByGeoBoundsRTree(
+    float minLat, float maxLat,
+    float minLon, float maxLon
+) const {
+    std::vector<std::shared_ptr<Record>> result;
+    
+    // Create bounding box for query
+    Point min_point(minLat, minLon);
+    Point max_point(maxLat, maxLon);
+    Box query_box(min_point, max_point);
+    
+    // Query R-tree with thread safety
+    {
+        std::shared_lock lock(spatial_mutex_);
+        
+        // Perform spatial query
+        std::vector<Value> found_values;
+        rtree_.query(bgi::intersects(query_box), std::back_inserter(found_values));
+        
+        // Extract records from query results
+        result.reserve(found_values.size());
+        for (const auto& value : found_values) {
+            result.push_back(value.second);
+        }
+    }
+    
+    return convertToInterfaceRecords(result);
+}
+
+DataSet::QueryStats DataSet::benchmarkQuery(
+    float minLat, float maxLat,
+    float minLon, float maxLon
+) const {
+    QueryStats stats;
+    
+    // Benchmark brute force method
+    {
+        auto start = std::chrono::high_resolution_clock::now();
+        auto results = queryByGeoBoundsBruteForce(minLat, maxLat, minLon, maxLon);
+        auto end = std::chrono::high_resolution_clock::now();
+        
+        std::chrono::duration<double> elapsed = end - start;
+        stats.bruteforce_time = elapsed.count();
+        stats.result_count = results.size();
+    }
+    
+    // Benchmark R-tree method
+    {
+        auto start = std::chrono::high_resolution_clock::now();
+        auto results = queryByGeoBoundsRTree(minLat, maxLat, minLon, maxLon);
+        auto end = std::chrono::high_resolution_clock::now();
+        
+        std::chrono::duration<double> elapsed = end - start;
+        stats.rtree_time = elapsed.count();
+        
+        // Verify result counts match
+        if (results.size() != stats.result_count) {
+            std::cerr << "Warning: Result count mismatch between methods!\n"
+                      << "Brute force: " << stats.result_count << "\n"
+                      << "R-tree: " << results.size() << "\n";
+        }
+    }
+    
+    return stats;
 }
 
 DataSet::Records DataSet::queryByBorough(const std::string& borough) const {
     auto it = boroughIndex_.find(borough);
-     std::cout << "calling from queryByBorough" << " .\n";
     return it != boroughIndex_.end() ? convertToInterfaceRecords(it->second) : Records{};
 }
 
 DataSet::Records DataSet::queryByZipCode(const std::string& zipCode) const {
     auto it = zipIndex_.find(zipCode);
-      std::cout << "calling from queryByZipCode" << " .\n";
     return it != zipIndex_.end() ? convertToInterfaceRecords(it->second) : Records{};
 }
 
@@ -117,13 +137,11 @@ DataSet::Records DataSet::queryByDateRange(const Date& start, const Date& end) c
     for (auto it = startIt; it != endIt; ++it) {
         result.insert(result.end(), it->second.begin(), it->second.end());
     }
-    std::cout << "calling from queryByDateRange" << " .\n";
     return convertToInterfaceRecords(result);
 }
 
 DataSet::Records DataSet::queryByVehicleType(const std::string& vehicleType) const {
     auto it = vehicleTypeIndex_.find(vehicleType);
-    std::cout << "calling from queryByVehicleType" << " .\n";
     return it != vehicleTypeIndex_.end() ? convertToInterfaceRecords(it->second) : Records{};
 }
 
@@ -135,7 +153,6 @@ DataSet::Records DataSet::queryByInjuryRange(int minInjuries, int maxInjuries) c
     for (auto it = startIt; it != endIt; ++it) {
         result.insert(result.end(), it->second.begin(), it->second.end());
     }
-    std::cout << "calling from queryByInjuryRange" << " .\n";
     return convertToInterfaceRecords(result);
 }
 
@@ -147,7 +164,6 @@ DataSet::Records DataSet::queryByFatalityRange(int minFatalities, int maxFatalit
     for (auto it = startIt; it != endIt; ++it) {
         result.insert(result.end(), it->second.begin(), it->second.end());
     }
-     std::cout << "calling from queryByFatalityRange" << " .\n";
     return convertToInterfaceRecords(result);
 }
 
@@ -164,7 +180,6 @@ DataSet::Records DataSet::queryByPedestrianFatalities(int minFatalities, int max
     for (auto it = startIt; it != endIt; ++it) {
         result.insert(result.end(), it->second.begin(), it->second.end());
     }
-     std::cout << "calling from queryByPedestrianFatalities" << " .\n";
     return convertToInterfaceRecords(result);
 }
 
@@ -176,7 +191,6 @@ DataSet::Records DataSet::queryByCyclistFatalities(int minFatalities, int maxFat
     for (auto it = startIt; it != endIt; ++it) {
         result.insert(result.end(), it->second.begin(), it->second.end());
     }
-     std::cout << "calling from queryByCyclistFatalities" << " .\n";
     return convertToInterfaceRecords(result);
 }
 
@@ -188,8 +202,19 @@ DataSet::Records DataSet::queryByMotoristFatalities(int minFatalities, int maxFa
     for (auto it = startIt; it != endIt; ++it) {
         result.insert(result.end(), it->second.begin(), it->second.end());
     }
-     std::cout << "calling from queryByMotoristFatalities" << " .\n";
     return convertToInterfaceRecords(result);
 }
+
+
+
+
+
+
+
+
+
+
+
+
 
 } // namespace nycollision

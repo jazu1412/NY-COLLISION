@@ -109,6 +109,16 @@ public:
         return dataset_ ? dataset_->queryByUniqueKey(key) : nullptr;
     }
 
+    /**
+     * @brief Get access to the underlying dataset for benchmarking
+     */
+    const DataSet& getDataset() const {
+        if (!dataset_) {
+            throw std::runtime_error("Dataset not loaded");
+        }
+        return *dataset_;
+    }
+
 private:
     std::unique_ptr<DataSet> dataset_;
     std::unique_ptr<CSVParser> parser_;
