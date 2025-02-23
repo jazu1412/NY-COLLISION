@@ -438,11 +438,15 @@ VectorizedDataSet::Records VectorizedDataSet::queryByInjuryRange(int minInjuries
 
     // Step 1: Compute a mask array (1 if condition is met, 0 otherwise)
     std::vector<int> mask(n, 0);
-    #pragma omp simd
+
+    // #pragma omp simd 
+   #pragma omp simd 
     for (size_t i = 0; i < n; ++i) {
         mask[i] = (persons_injured[i] >= minInjuries && persons_injured[i] <= maxInjuries) ? 1 : 0;
     }
 
+
+    
     // Step 2: Compute an exclusive prefix sum on the mask.
     // We'll implement our own exclusive scan inline.
     std::vector<size_t> prefix(n, 0);
@@ -458,14 +462,18 @@ VectorizedDataSet::Records VectorizedDataSet::queryByInjuryRange(int minInjuries
     size_t count = (n > 0 ? prefix[n - 1] + mask[n - 1] : 0);
     std::vector<size_t> resultIndices(count);
 
+    
+
     // Step 3: Scatter the matching indices into the result array.
     // For each index i, if mask[i] is 1, prefix[i] gives the output position.
-    #pragma omp simd
+  // #pragma omp for schedule(dynamic)
+     #pragma omp simd 
     for (size_t i = 0; i < n; ++i) {
         if (mask[i])
             resultIndices[prefix[i]] = i;
     }
 
+    
     return createRecordsFromIndices(resultIndices);
 }
 

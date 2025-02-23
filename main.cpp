@@ -138,6 +138,33 @@ int main(int argc, char* argv[]) {
     try {
         nycollision::CSVParser parser;
 
+        // Function to test SIMD performance of queryByInjuryRange
+        auto testInjuryRangePerformance = [](const nycollision::IDataSet& dataset, const std::string& implementation) {
+            const int NUM_ITERATIONS = 10;
+            double totalTime = 0;
+
+            std::cout << "\n=== Testing " << implementation << " queryByInjuryRange (SIMD) ===\n";
+            
+            for (int i = 0; i < NUM_ITERATIONS; ++i) {
+                auto start = std::chrono::high_resolution_clock::now();
+                auto records = dataset.queryByInjuryRange(3, 10);
+                auto end = std::chrono::high_resolution_clock::now();
+                
+                double time = std::chrono::duration<double, std::milli>(end - start).count();
+                totalTime += time;
+                
+                if (i == 0) { // Only print record count once
+                    std::cout << "Found " << records.size() << " records in range [3, 10] injuries\n";
+                }
+            }
+
+            double avgTime = totalTime / NUM_ITERATIONS;
+            std::cout << "Average execution time: " << std::fixed << std::setprecision(2) 
+                      << avgTime << " ms\n";
+            return avgTime;
+        };
+
+
         // Thread scaling performance test for countByBorough
         std::cout << "\n=== Thread Scaling Performance Test for countByBorough ===\n";
         std::cout << "Testing performance with different thread counts (1-32)\n\n";
@@ -148,6 +175,16 @@ int main(int argc, char* argv[]) {
         nycollision::VectorizedDataSet vectorizedDataset;
         vectorizedDataset.loadFromFile(argv[1], parser);
 
+        // Test SIMD performance for queryByInjuryRange
+        std::cout << "\n=== SIMD Performance Test for queryByInjuryRange ===\n";
+        double originalTime = testInjuryRangePerformance(originalDataset, "Original");
+        double vectorizedTime = testInjuryRangePerformance(vectorizedDataset, "Vectorized");
+        
+        double improvement = ((originalTime - vectorizedTime) / originalTime) * 100;
+        std::cout << "\nSIMD Performance Improvement: " << std::fixed << std::setprecision(2) 
+                  << improvement << "%\n\n";
+
+        // Thread scaling test header
         std::cout << std::setw(10) << "Threads" 
                   << std::setw(20) << "Original (ms)"
                   << std::setw(20) << "Vectorized (ms)"
