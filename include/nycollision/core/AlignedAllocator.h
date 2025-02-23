@@ -27,13 +27,10 @@ public:
     AlignedAllocator(const AlignedAllocator<U, Alignment>&) noexcept {}
 
     pointer allocate(size_type n) {
-        // On some platforms, alignment must be a multiple of sizeof(void*)
-        // so check that if needed:
-        // static_assert(Alignment % alignof(void*) == 0, "Alignment must be a multiple of sizeof(void*)");
+       //Alignment must be a multiple of sizeof(void*)"
 
         std::size_t bytes = n * sizeof(T);
-        // std::aligned_alloc requires a block size that’s a multiple of alignment.
-        // If needed, we can round up to a multiple of `Alignment`.
+     
         if (bytes % Alignment != 0) {
             bytes += (Alignment - (bytes % Alignment));
         }
