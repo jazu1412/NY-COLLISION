@@ -117,11 +117,11 @@ QueryTimes runPerformanceTests(const nycollision::IDataSet& dataset) {
     std::cout << "\nPerformance Results:\n"
             //   << "Date range query: " << times.dateRange << "ms\n"
             //   << "Geographic bounds query: " << times.geoBounds << "ms\n"
-              << "Injury range query: " << times.injury << "ms\n"
+            //  << "Injury range query: " << times.injury << "ms\n"
               << "Vehicle type query: " << times.vehicle << "ms\n"
-              << "Borough query: " << times.borough << "ms\n"
+            //  << "Borough query: " << times.borough << "ms\n"
               << "Borough count aggregation: " << times.boroughCount << "ms\n"
-              << "Total time: " << times.total << "ms\n\n";
+           //   << "Total time: " << times.total << "ms\n\n";
               
     return times;
 }
@@ -205,16 +205,16 @@ int main(int argc, char* argv[]) {
                 //   << ((originalTimes.dateRange - vectorizedTimes.dateRange) / originalTimes.dateRange * 100) << "%\n"
                 //   << "Geographic bounds query: "
                 //   << ((originalTimes.geoBounds - vectorizedTimes.geoBounds) / originalTimes.geoBounds * 100) << "%\n"
-                  << "Injury range query: "
-                  << ((originalTimes.injury - vectorizedTimes.injury) / originalTimes.injury * 100) << "%\n"
+                //  << "Injury range query: "
+               //   << ((originalTimes.injury - vectorizedTimes.injury) / originalTimes.injury * 100) << "%\n"
                   << "Vehicle type query: "
                   << ((originalTimes.vehicle - vectorizedTimes.vehicle) / originalTimes.vehicle * 100) << "%\n"
-                  << "Borough query: "
-                  << ((originalTimes.borough - vectorizedTimes.borough) / originalTimes.borough * 100) << "%\n"
+                //  << "Borough query: "
+                //  << ((originalTimes.borough - vectorizedTimes.borough) / originalTimes.borough * 100) << "%\n"
                   << "Borough count aggregation: "
                   << ((originalTimes.boroughCount - vectorizedTimes.boroughCount) / originalTimes.boroughCount * 100) << "%\n"
-                  << "Total improvement: "
-                  << ((originalTimes.total - vectorizedTimes.total) / originalTimes.total * 100) << "%\n";
+                 // << "Total improvement: "
+                //  << ((originalTimes.total - vectorizedTimes.total) / originalTimes.total * 100) << "%\n";
 
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;

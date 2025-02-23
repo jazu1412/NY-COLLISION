@@ -30,9 +30,9 @@ size_t VectorizedDataSet::countByBorough(const std::string& borough) const {
     {
         #pragma omp master
         {
-            std::cout << "Inside vectorized borough count parallel region: " 
-                      << omp_get_num_threads() 
-                      << " threads\n";
+           // std::cout << "Inside vectorized borough count parallel region: " 
+            //          << omp_get_num_threads() 
+             //         << " threads\n";
         }
     }
     #endif
@@ -44,7 +44,7 @@ size_t VectorizedDataSet::countByBorough(const std::string& borough) const {
             count++;
         }
     }
-    std::cout << "Count for borough in vectorized " << borough << " is " << count << "\n";
+  //  std::cout << "Count for borough in vectorized " << borough << " is " << count << "\n";
     return count;
 }
 

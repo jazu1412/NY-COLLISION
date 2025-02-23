@@ -44,119 +44,229 @@ DataSet::Records DataSet::queryByGeoBounds(
     float minLon, float maxLon
 ) const {
     std::vector<std::shared_ptr<Record>> result;
-    for (const auto& record : records_) {
-        auto loc = record->getLocation();
-        if (loc.latitude >= minLat && loc.latitude <= maxLat &&
-            loc.longitude >= minLon && loc.longitude <= maxLon) {
-            result.push_back(record);
+    
+    #pragma omp parallel
+    {
+        std::vector<std::shared_ptr<Record>> local_matches;
+        
+        #pragma omp for nowait
+        for (size_t i = 0; i < records_.size(); ++i) {
+            auto loc = records_[i]->getLocation();
+            if (loc.latitude >= minLat && loc.latitude <= maxLat &&
+                loc.longitude >= minLon && loc.longitude <= maxLon) {
+                local_matches.push_back(records_[i]);
+            }
         }
+        
+        #pragma omp critical
+        result.insert(result.end(), local_matches.begin(), local_matches.end());
     }
+    
     std::cout << "calling from queryByGeoBounds" << " .\n";
     return convertToInterfaceRecords(result);
 }
 
 DataSet::Records DataSet::queryByZipCode(const std::string& zipCode) const {
     std::vector<std::shared_ptr<Record>> result;
-    for (const auto& record : records_) {
-        if (record->getZipCode() == zipCode) {
-            result.push_back(record);
+    
+    #pragma omp parallel
+    {
+        std::vector<std::shared_ptr<Record>> local_matches;
+        
+        #pragma omp for nowait
+        for (size_t i = 0; i < records_.size(); ++i) {
+            if (records_[i]->getZipCode() == zipCode) {
+                local_matches.push_back(records_[i]);
+            }
         }
+        
+        #pragma omp critical
+        result.insert(result.end(), local_matches.begin(), local_matches.end());
     }
+    
     std::cout << "calling from queryByZipCode" << " .\n";
     return convertToInterfaceRecords(result);
 }
 
 DataSet::Records DataSet::queryByDateRange(const Date& start, const Date& end) const {
     std::vector<std::shared_ptr<Record>> result;
-    for (const auto& record : records_) {
-        const auto& date = record->getDateTime();
-        if (date >= start && date <= end) {
-            result.push_back(record);
+    
+    #pragma omp parallel
+    {
+        std::vector<std::shared_ptr<Record>> local_matches;
+        
+        #pragma omp for nowait
+        for (size_t i = 0; i < records_.size(); ++i) {
+            const auto& date = records_[i]->getDateTime();
+            if (date >= start && date <= end) {
+                local_matches.push_back(records_[i]);
+            }
         }
+        
+        #pragma omp critical
+        result.insert(result.end(), local_matches.begin(), local_matches.end());
     }
+    
     std::cout << "calling from queryByDateRange" << " .\n";
     return convertToInterfaceRecords(result);
 }
 
 DataSet::Records DataSet::queryByVehicleType(const std::string& vehicleType) const {
     std::vector<std::shared_ptr<Record>> result;
-    for (const auto& record : records_) {
-        const auto& info = record->getVehicleInfo();
-        if (std::find(info.vehicle_types.begin(), info.vehicle_types.end(), vehicleType) != info.vehicle_types.end()) {
-            result.push_back(record);
+    
+    #pragma omp parallel
+    {
+        std::vector<std::shared_ptr<Record>> local_matches;
+        
+        #pragma omp for nowait
+        for (size_t i = 0; i < records_.size(); ++i) {
+            const auto& info = records_[i]->getVehicleInfo();
+            if (std::find(info.vehicle_types.begin(), info.vehicle_types.end(), vehicleType) != info.vehicle_types.end()) {
+                local_matches.push_back(records_[i]);
+            }
         }
+        
+        #pragma omp critical
+        result.insert(result.end(), local_matches.begin(), local_matches.end());
     }
+    
     std::cout << "calling from queryByVehicleType" << " .\n";
     return convertToInterfaceRecords(result);
 }
 
 DataSet::Records DataSet::queryByInjuryRange(int minInjuries, int maxInjuries) const {
     std::vector<std::shared_ptr<Record>> result;
-    for (const auto& record : records_) {
-        const auto& stats = record->getCasualtyStats();
-        int total = stats.getTotalInjuries();
-        if (total >= minInjuries && total <= maxInjuries) {
-            result.push_back(record);
+    
+    #pragma omp parallel
+    {
+        std::vector<std::shared_ptr<Record>> local_matches;
+        
+        #pragma omp for nowait
+        for (size_t i = 0; i < records_.size(); ++i) {
+            const auto& stats = records_[i]->getCasualtyStats();
+            int total = stats.getTotalInjuries();
+            if (total >= minInjuries && total <= maxInjuries) {
+                local_matches.push_back(records_[i]);
+            }
         }
+        
+        #pragma omp critical
+        result.insert(result.end(), local_matches.begin(), local_matches.end());
     }
+    
     std::cout << "calling from queryByInjuryRange" << " .\n";
     return convertToInterfaceRecords(result);
 }
 
 DataSet::Records DataSet::queryByFatalityRange(int minFatalities, int maxFatalities) const {
     std::vector<std::shared_ptr<Record>> result;
-    for (const auto& record : records_) {
-        const auto& stats = record->getCasualtyStats();
-        int total = stats.getTotalFatalities();
-        if (total >= minFatalities && total <= maxFatalities) {
-            result.push_back(record);
+    
+    #pragma omp parallel
+    {
+        std::vector<std::shared_ptr<Record>> local_matches;
+        
+        #pragma omp for nowait
+        for (size_t i = 0; i < records_.size(); ++i) {
+            const auto& stats = records_[i]->getCasualtyStats();
+            int total = stats.getTotalFatalities();
+            if (total >= minFatalities && total <= maxFatalities) {
+                local_matches.push_back(records_[i]);
+            }
         }
+        
+        #pragma omp critical
+        result.insert(result.end(), local_matches.begin(), local_matches.end());
     }
+    
     std::cout << "calling from queryByFatalityRange" << " .\n";
     return convertToInterfaceRecords(result);
 }
 
 DataSet::RecordPtr DataSet::queryByUniqueKey(int key) const {
-    for (const auto& record : records_) {
-        if (record->getUniqueKey() == key) {
-            return std::static_pointer_cast<const IRecord>(record);
+    std::shared_ptr<Record> result = nullptr;
+    bool found = false;
+    
+    #pragma omp parallel for
+    for (size_t i = 0; i < records_.size(); ++i) {
+        if (!found && records_[i]->getUniqueKey() == key) {
+            #pragma omp critical
+            {
+                if (!found) {
+                    result = records_[i];
+                    found = true;
+                }
+            }
         }
     }
-    return nullptr;
+    
+    return result ? std::static_pointer_cast<const IRecord>(result) : nullptr;
 }
 
 DataSet::Records DataSet::queryByPedestrianFatalities(int minFatalities, int maxFatalities) const {
     std::vector<std::shared_ptr<Record>> result;
-    for (const auto& record : records_) {
-        const auto& stats = record->getCasualtyStats();
-        if (stats.pedestrians_killed >= minFatalities && stats.pedestrians_killed <= maxFatalities) {
-            result.push_back(record);
+    
+    #pragma omp parallel
+    {
+        std::vector<std::shared_ptr<Record>> local_matches;
+        
+        #pragma omp for nowait
+        for (size_t i = 0; i < records_.size(); ++i) {
+            const auto& stats = records_[i]->getCasualtyStats();
+            if (stats.pedestrians_killed >= minFatalities && stats.pedestrians_killed <= maxFatalities) {
+                local_matches.push_back(records_[i]);
+            }
         }
+        
+        #pragma omp critical
+        result.insert(result.end(), local_matches.begin(), local_matches.end());
     }
+    
     std::cout << "calling from queryByPedestrianFatalities" << " .\n";
     return convertToInterfaceRecords(result);
 }
 
 DataSet::Records DataSet::queryByCyclistFatalities(int minFatalities, int maxFatalities) const {
     std::vector<std::shared_ptr<Record>> result;
-    for (const auto& record : records_) {
-        const auto& stats = record->getCasualtyStats();
-        if (stats.cyclists_killed >= minFatalities && stats.cyclists_killed <= maxFatalities) {
-            result.push_back(record);
+    
+    #pragma omp parallel
+    {
+        std::vector<std::shared_ptr<Record>> local_matches;
+        
+        #pragma omp for nowait
+        for (size_t i = 0; i < records_.size(); ++i) {
+            const auto& stats = records_[i]->getCasualtyStats();
+            if (stats.cyclists_killed >= minFatalities && stats.cyclists_killed <= maxFatalities) {
+                local_matches.push_back(records_[i]);
+            }
         }
+        
+        #pragma omp critical
+        result.insert(result.end(), local_matches.begin(), local_matches.end());
     }
+    
     std::cout << "calling from queryByCyclistFatalities" << " .\n";
     return convertToInterfaceRecords(result);
 }
 
 DataSet::Records DataSet::queryByMotoristFatalities(int minFatalities, int maxFatalities) const {
     std::vector<std::shared_ptr<Record>> result;
-    for (const auto& record : records_) {
-        const auto& stats = record->getCasualtyStats();
-        if (stats.motorists_killed >= minFatalities && stats.motorists_killed <= maxFatalities) {
-            result.push_back(record);
+    
+    #pragma omp parallel
+    {
+        std::vector<std::shared_ptr<Record>> local_matches;
+        
+        #pragma omp for nowait
+        for (size_t i = 0; i < records_.size(); ++i) {
+            const auto& stats = records_[i]->getCasualtyStats();
+            if (stats.motorists_killed >= minFatalities && stats.motorists_killed <= maxFatalities) {
+                local_matches.push_back(records_[i]);
+            }
         }
+        
+        #pragma omp critical
+        result.insert(result.end(), local_matches.begin(), local_matches.end());
     }
+    
     std::cout << "calling from queryByMotoristFatalities" << " .\n";
     return convertToInterfaceRecords(result);
 }

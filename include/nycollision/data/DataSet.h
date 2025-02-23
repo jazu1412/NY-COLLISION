@@ -78,9 +78,9 @@ public:
     {
         #pragma omp master
         {
-            std::cout << "Inside normal approach record loading parallel region: " 
-                      << omp_get_num_threads() 
-                      << " threads\n";
+         //  std::cout << "Inside normal approach record loading parallel region: " 
+             //         << omp_get_num_threads() 
+             //         << " threads\n";
         }
     }
      #endif
