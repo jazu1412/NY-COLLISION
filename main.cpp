@@ -137,17 +137,65 @@ int main(int argc, char* argv[]) {
 
     try {
         nycollision::CSVParser parser;
+
+        // Thread scaling performance test for countByBorough
+        std::cout << "\n=== Thread Scaling Performance Test for countByBorough ===\n";
+        std::cout << "Testing performance with different thread counts (1-32)\n\n";
         
-        // Test original implementation
-        std::cout << "=== Testing Original Implementation ===\n";
+        // Load datasets once
         nycollision::DataSet originalDataset;
         originalDataset.loadFromFile(argv[1], parser);
-        QueryTimes originalTimes = runPerformanceTests(originalDataset);
-        
-        // Test vectorized implementation
-        std::cout << "\n=== Testing Vectorized Implementation ===\n";
         nycollision::VectorizedDataSet vectorizedDataset;
         vectorizedDataset.loadFromFile(argv[1], parser);
+
+        std::cout << std::setw(10) << "Threads" 
+                  << std::setw(20) << "Original (ms)"
+                  << std::setw(20) << "Vectorized (ms)"
+                  << std::setw(20) << "Improvement (%)\n";
+        std::cout << std::string(70, '-') << "\n";
+
+        const int NUM_ITERATIONS = 10; // Run multiple iterations for more stable results
+        
+        for (int threads = 1; threads <= 32; ++threads) {
+            omp_set_num_threads(threads);
+            
+            // Test original implementation
+            double originalTotal = 0;
+            for (int i = 0; i < NUM_ITERATIONS; ++i) {
+                auto start = std::chrono::high_resolution_clock::now();
+                auto count = originalDataset.countByBorough("BROOKLYN");
+                auto end = std::chrono::high_resolution_clock::now();
+                originalTotal += std::chrono::duration<double, std::milli>(end - start).count();
+            }
+            double originalAvg = originalTotal / NUM_ITERATIONS;
+
+            // Test vectorized implementation
+            double vectorizedTotal = 0;
+            for (int i = 0; i < NUM_ITERATIONS; ++i) {
+                auto start = std::chrono::high_resolution_clock::now();
+                auto count = vectorizedDataset.countByBorough("BROOKLYN");
+                auto end = std::chrono::high_resolution_clock::now();
+                vectorizedTotal += std::chrono::duration<double, std::milli>(end - start).count();
+            }
+            double vectorizedAvg = vectorizedTotal / NUM_ITERATIONS;
+
+            // Calculate improvement percentage
+            double improvement = ((originalAvg - vectorizedAvg) / originalAvg) * 100;
+
+            // Print results
+            std::cout << std::fixed << std::setprecision(2)
+                      << std::setw(10) << threads
+                      << std::setw(20) << originalAvg
+                      << std::setw(20) << vectorizedAvg
+                      << std::setw(20) << improvement << "\n";
+        }
+        std::cout << std::endl;
+
+        // Run the general performance tests with the already loaded datasets
+        std::cout << "=== Testing Original Implementation ===\n";
+        QueryTimes originalTimes = runPerformanceTests(originalDataset);
+        
+        std::cout << "\n=== Testing Vectorized Implementation ===\n";
         QueryTimes vectorizedTimes = runPerformanceTests(vectorizedDataset);
         
         // Calculate and print performance improvements
