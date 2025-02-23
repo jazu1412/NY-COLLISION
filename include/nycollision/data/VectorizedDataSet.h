@@ -53,7 +53,9 @@ public:
     Records queryByCyclistFatalities(int minFatalities, int maxFatalities) const override;
     Records queryByMotoristFatalities(int minFatalities, int maxFatalities) const override;
     Records queryByBorough(const std::string& borough) const override;
-    
+
+    size_t countByBorough(const std::string &borough) const override;
+
     size_t size() const override { return unique_keys.size(); }
 
 private:
@@ -137,8 +139,9 @@ IntAligned32Vec pedestrians_killed;
     std::map<int, std::vector<size_t>> cyclist_fatality_index;
     std::map<int, std::vector<size_t>> motorist_fatality_index;
     
-    // Vehicle type index
+    // Vehicle type and borough indices
     std::unordered_map<std::string, std::vector<size_t>> vehicle_type_index;
+    std::unordered_map<std::string, std::vector<size_t>> borough_index;
 };
 
 } // namespace nycollision

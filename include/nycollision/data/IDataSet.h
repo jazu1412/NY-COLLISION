@@ -74,6 +74,12 @@ public:
     virtual Records queryByBorough(const std::string& borough) const = 0;
 
     /**
+     * @brief Count records by borough
+     * @return Number of records in the specified borough
+     */
+    virtual size_t countByBorough(const std::string& borough) const = 0;
+
+    /**
      * @brief Returns total number of records in the dataset
      */
     virtual size_t size() const = 0;

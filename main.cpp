@@ -59,6 +59,7 @@ struct QueryTimes {
     double injury;
     double vehicle;
     double borough;
+    double boroughCount;
     double total;
 };
 
@@ -105,7 +106,13 @@ QueryTimes runPerformanceTests(const nycollision::IDataSet& dataset) {
         std::cout << "Borough query found " << records.size() << " records\n";
     });
     
-    times.total = times.injury + times.vehicle + times.borough;
+    // Borough count aggregation
+    times.boroughCount = measureTime([&]() {
+        auto count = dataset.countByBorough("BROOKLYN");
+        std::cout << "Borough count aggregation found " << count << " records in BROOKLYN\n";
+    });
+
+    times.total = times.injury + times.vehicle + times.borough + times.boroughCount;
     
     std::cout << "\nPerformance Results:\n"
             //   << "Date range query: " << times.dateRange << "ms\n"
@@ -113,6 +120,7 @@ QueryTimes runPerformanceTests(const nycollision::IDataSet& dataset) {
               << "Injury range query: " << times.injury << "ms\n"
               << "Vehicle type query: " << times.vehicle << "ms\n"
               << "Borough query: " << times.borough << "ms\n"
+              << "Borough count aggregation: " << times.boroughCount << "ms\n"
               << "Total time: " << times.total << "ms\n\n";
               
     return times;
@@ -155,6 +163,8 @@ int main(int argc, char* argv[]) {
                   << ((originalTimes.vehicle - vectorizedTimes.vehicle) / originalTimes.vehicle * 100) << "%\n"
                   << "Borough query: "
                   << ((originalTimes.borough - vectorizedTimes.borough) / originalTimes.borough * 100) << "%\n"
+                  << "Borough count aggregation: "
+                  << ((originalTimes.boroughCount - vectorizedTimes.boroughCount) / originalTimes.boroughCount * 100) << "%\n"
                   << "Total improvement: "
                   << ((originalTimes.total - vectorizedTimes.total) / originalTimes.total * 100) << "%\n";
 

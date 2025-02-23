@@ -63,7 +63,6 @@ public:
         // Handle empty file or missing header if necessary
         return;
     }
-    omp_set_num_threads(11);
     // Read all lines into memory
     std::vector<std::string> lines;
     lines.reserve(2'700'000); // optional: reserve enough space for 2 million lines
@@ -73,6 +72,18 @@ public:
 
     // Create a temporary vector to hold parsed records
     std::vector<std::shared_ptr<Record>> parsedRecords(lines.size());
+
+      #ifdef _OPENMP
+    #pragma omp parallel
+    {
+        #pragma omp master
+        {
+            std::cout << "Inside normal approach record loading parallel region: " 
+                      << omp_get_num_threads() 
+                      << " threads\n";
+        }
+    }
+     #endif
 
     // Parallel parse each line
     #pragma omp parallel for
@@ -108,6 +119,7 @@ public:
     Records queryByCyclistFatalities(int minFatalities, int maxFatalities) const override;
     Records queryByMotoristFatalities(int minFatalities, int maxFatalities) const override;
     Records queryByBorough(const std::string& borough) const override;
+    size_t countByBorough(const std::string& borough) const override;
     
     size_t size() const override { return records_.size(); }
 

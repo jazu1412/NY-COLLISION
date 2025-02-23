@@ -1,10 +1,10 @@
-#include "../include/nycollision/data/VectorizedDataSet.h"
+#include "nycollision/data/VectorizedDataSet.h"
+#include "nycollision/core/Config.h"
 #include <algorithm>
 #include <fstream>
 #include <stdexcept>
 #include <iostream>
 #include <iterator>
-#include "../include/nycollision/core/Config.h"
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -17,13 +17,35 @@ VectorizedDataSet::VectorizedDataSet() {
 }
 
 IDataSet::Records VectorizedDataSet::queryByBorough(const std::string& borough) const {
-    std::vector<size_t> matching_indices;
-    for (size_t i = 0; i < boroughs.size(); ++i) {
-        if (boroughs[i] == borough) {
-            matching_indices.push_back(i);
+    auto it = borough_index.find(borough);
+       std::cout << "calling createfromindices in querybyborough" << " \n";
+
+    return it != borough_index.end() ? createRecordsFromIndices(it->second) : Records{};
+}
+
+size_t VectorizedDataSet::countByBorough(const std::string& borough) const {
+
+    #ifdef _OPENMP
+    #pragma omp parallel
+    {
+        #pragma omp master
+        {
+            std::cout << "Inside vectorized borough count parallel region: " 
+                      << omp_get_num_threads() 
+                      << " threads\n";
         }
     }
-    return createRecordsFromIndices(matching_indices);
+    #endif
+    size_t count = 0;
+    // Iterate over the vector of borough strings
+    #pragma omp parallel for reduction(+:count)
+    for (size_t i = 0; i < boroughs.size(); ++i) {
+        if (boroughs[i] == borough) {
+            count++;
+        }
+    }
+    std::cout << "Count for borough in vectorized " << borough << " is " << count << "\n";
+    return count;
 }
 
 namespace {
@@ -201,6 +223,7 @@ void VectorizedDataSet::loadFromFile(const std::string& filename, const IParser&
                     key_to_index[record->getUniqueKey()] = index;
                     zip_index[record->getZipCode()].push_back(index);
                     date_index[dt].push_back(index);
+                    borough_index[record->getBorough()].push_back(index);
                     
                     // Update range indices
                     injury_index[stats.getTotalInjuries()].push_back(index);
@@ -299,40 +322,17 @@ VectorizedDataSet::Records VectorizedDataSet::createRecordsFromIndices(
     
     // Use a single parallel region for better efficiency
     #ifdef _OPENMP
-    const size_t chunk_size = 64; // Process records in chunks for better cache utilization
+    std::vector<std::shared_ptr<Record>> temp_results(indices.size());
     #pragma omp parallel
-    {
-        Records local_results;
-        local_results.reserve(chunk_size);
-        
-        #pragma omp for schedule(static, chunk_size) nowait
-        for (size_t i = 0; i < indices.size(); ++i) {
-            auto record = createRecord(indices[i]);
-            
-            // Batch the critical section
-            if (local_results.size() >= chunk_size) {
-                #pragma omp critical
-                {
-                    result.insert(result.end(), 
-                                std::make_move_iterator(local_results.begin()),
-                                std::make_move_iterator(local_results.end()));
-                    local_results.clear();
-                    local_results.reserve(chunk_size);
-                }
-            }
-            local_results.push_back(std::move(record));
-        }
-        
-        // Final batch
-        if (!local_results.empty()) {
-            #pragma omp critical
-            {
-                result.insert(result.end(),
-                            std::make_move_iterator(local_results.begin()),
-                            std::make_move_iterator(local_results.end()));
-            }
-        }
-    }
+   {
+     #pragma omp for nowait
+     for (size_t i = 0; i < indices.size(); ++i) {
+        temp_results[i] = createRecord(indices[i]);
+      }
+   }
+    result.insert(result.end(), 
+                 std::make_move_iterator(temp_results.begin()),
+                 std::make_move_iterator(temp_results.end()));
     #else
     for (size_t idx : indices) {
         result.push_back(createRecord(idx));
@@ -432,90 +432,6 @@ VectorizedDataSet::Records VectorizedDataSet::queryByVehicleType(
     return it != vehicle_type_index.end() ? createRecordsFromIndices(it->second) : Records{};
 }
 
-// VectorizedDataSet::Records VectorizedDataSet::queryByInjuryRange(
-//     int minInjuries,
-//     int maxInjuries
-// ) const {
-//     std::vector<size_t> result_indices;
-//     auto startIt = injury_index.lower_bound(minInjuries);
-//     auto endIt = injury_index.upper_bound(maxInjuries);
-    
-//     size_t total_size = std::distance(startIt, endIt);
-    
-//     #ifdef _OPENMP
-//     #pragma omp parallel
-//     {
-//         std::vector<size_t> local_indices;
-        
-//         #pragma omp for schedule(dynamic)
-//         for (size_t i = 0; i < total_size; ++i) {
-//             auto it = std::next(startIt, i);
-//             local_indices.insert(local_indices.end(),
-//                                it->second.begin(),
-//                                it->second.end());
-//         }
-        
-//         #pragma omp critical
-//         result_indices.insert(result_indices.end(),
-//                             local_indices.begin(),
-//                             local_indices.end());
-//     }
-//     #else
-//     for (auto it = startIt; it != endIt; ++it) {
-//         result_indices.insert(result_indices.end(),
-//                             it->second.begin(),
-//                             it->second.end());
-//     }
-//     #endif
-    
-//     return createRecordsFromIndices(result_indices);
-// }
-// Query by scanning persons_injured
-
-
-
-// VectorizedDataSet::Records
-// VectorizedDataSet::queryByInjuryRange(int minInjuries, int maxInjuries) const
-// {
-//     // We'll gather indices first
-//     std::vector<size_t> resultIndices;
-//     resultIndices.reserve(persons_injured.size());
-//     const int* inj_ptr = persons_injured.data();
-
-// #ifdef _OPENMP
-// #pragma omp parallel
-//     {
-//         int count =0 ;
-//         std::vector<size_t> localIdx;
-//         localIdx.reserve(persons_injured.size() / omp_get_num_threads());
-
-//         #pragma omp for simd
-//         for (size_t i = 0; i < persons_injured.size(); ++i) {
-//             int val = persons_injured[i];
-//             if (val >= minInjuries && val <= maxInjuries) {
-//                 localIdx.push_back(i);
-//             }
-//         }
-
-//         #pragma omp critical
-//         {
-//             resultIndices.insert(resultIndices.end(), localIdx.begin(), localIdx.end());
-//         }
-//     }
-// #else
-//     for (size_t i = 0; i < persons_injured.size(); ++i) {
-//         int val = persons_injured[i];
-//         if (val >= minInjuries && val <= maxInjuries) {
-//             resultIndices.push_back(i);
-//         }
-//     }
-// #endif
-
-//     // Now convert indices -> Records
-//     return createRecordsFromIndices(resultIndices);
-// }
-
-
 VectorizedDataSet::Records VectorizedDataSet::queryByInjuryRange(int minInjuries, int maxInjuries) const
 {
     size_t n = persons_injured.size();
@@ -552,9 +468,6 @@ VectorizedDataSet::Records VectorizedDataSet::queryByInjuryRange(int minInjuries
 
     return createRecordsFromIndices(resultIndices);
 }
-
-
-
 
 VectorizedDataSet::Records VectorizedDataSet::queryByFatalityRange(
     int minFatalities,

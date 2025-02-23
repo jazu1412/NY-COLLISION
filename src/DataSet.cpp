@@ -182,5 +182,29 @@ DataSet::Records DataSet::queryByBorough(const std::string& borough) const {
     std::cout << "calling from queryByBorough" << " .\n";
     return convertToInterfaceRecords(result);
 }
+size_t DataSet::countByBorough(const std::string& borough) const {
+    size_t count = 0;
+
+    #ifdef _OPENMP
+    #pragma omp parallel
+    {
+        #pragma omp master
+        {
+            std::cout << "Inside normal approach borough count parallel region: " 
+                      << omp_get_num_threads() 
+                      << " threads\n";
+        }
+    }
+     #endif
+
+    #pragma omp parallel for reduction(+:count)
+    for (size_t i = 0; i < records_.size(); ++i) {
+        if (records_[i]->getBorough() == borough) {
+            count++;
+        }
+    }
+    std::cout << "calling from countByBorough in normal approach, count: " << count << "\n";
+    return count;
+}
 
 } // namespace nycollision
