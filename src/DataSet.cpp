@@ -130,7 +130,7 @@ DataSet::Records DataSet::queryByVehicleType(const std::string& vehicleType) con
         result.insert(result.end(), local_matches.begin(), local_matches.end());
     }
     
-    std::cout << "calling from queryByVehicleType" << " .\n";
+   // std::cout << "calling from queryByVehicleType" << " .\n";
     return convertToInterfaceRecords(result);
 }
 
@@ -300,9 +300,9 @@ size_t DataSet::countByBorough(const std::string& borough) const {
     {
         #pragma omp master
         {
-            std::cout << "Inside normal approach borough count parallel region: " 
-                      << omp_get_num_threads() 
-                      << " threads\n";
+         //   std::cout << "Inside normal approach borough count parallel region: " 
+            //          << omp_get_num_threads() 
+              //        << " threads\n";
         }
     }
      #endif
@@ -313,7 +313,7 @@ size_t DataSet::countByBorough(const std::string& borough) const {
             count++;
         }
     }
-    std::cout << "calling from countByBorough in normal approach, count: " << count << "\n";
+    //std::cout << "calling from countByBorough in normal approach, count: " << count << "\n";
     return count;
 }
 
